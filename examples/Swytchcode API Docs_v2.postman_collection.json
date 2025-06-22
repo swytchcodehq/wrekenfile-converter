@@ -1,0 +1,2890 @@
+{
+	"info": {
+		"_postman_id": "6e8ea8a5-857b-4b43-a90d-3f291b4093c4",
+		"name": "Swytchcode API Docs",
+		"description": "OpeAPI documentation for Swytchcode API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json",
+		"_exporter_id": "199249"
+	},
+	"item": [
+		{
+			"name": "v2",
+			"item": [
+				{
+					"name": "app",
+					"item": [
+						{
+							"name": "authenticate",
+							"item": [
+								{
+									"name": "App email authentication",
+									"request": {
+										"method": "POST",
+										"header": [
+											{
+												"key": "Content-Type",
+												"value": "application/json"
+											},
+											{
+												"key": "Accept",
+												"value": "application/json"
+											}
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"firebaseId\": \"ut aliqua qui incididunt n\",\n  \"accessToken\": \"nostrud ex in Ut\"\n}",
+											"options": {
+												"raw": {
+													"headerFamily": "json",
+													"language": "json"
+												}
+											}
+										},
+										"url": "{{baseUrl}}/v2/app/authenticate",
+										"description": "App email authentication"
+									},
+									"response": [
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "POST",
+												"header": [
+													{
+														"key": "Content-Type",
+														"value": "application/json"
+													},
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"body": {
+													"mode": "raw",
+													"raw": "{\n  \"firebaseId\": \"ut aliqua qui incididunt n\",\n  \"accessToken\": \"nostrud ex in Ut\"\n}",
+													"options": {
+														"raw": {
+															"headerFamily": "json",
+															"language": "json"
+														}
+													}
+												},
+												"url": "{{baseUrl}}/v2/app/authenticate"
+											},
+											"status": "OK",
+											"code": 200,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"subscribed\": false,\n  \"subsciptionName\": \"velit ad\"\n}"
+										},
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "POST",
+												"header": [
+													{
+														"key": "Content-Type",
+														"value": "application/json"
+													},
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"body": {
+													"mode": "raw",
+													"raw": "{\n  \"firebaseId\": \"ut aliqua qui incididunt n\",\n  \"accessToken\": \"nostrud ex in Ut\"\n}",
+													"options": {
+														"raw": {
+															"headerFamily": "json",
+															"language": "json"
+														}
+													}
+												},
+												"url": "{{baseUrl}}/v2/app/authenticate"
+											},
+											"status": "Unauthorized",
+											"code": 401,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+										}
+									]
+								}
+							]
+						},
+						{
+							"name": "register",
+							"item": [
+								{
+									"name": "App registration",
+									"request": {
+										"method": "POST",
+										"header": [
+											{
+												"key": "Content-Type",
+												"value": "application/json"
+											},
+											{
+												"key": "Accept",
+												"value": "application/json"
+											}
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"email\": \"kxaa1WFZxHy1sR@NlWSS.mztt\",\n  \"name\": \"in nisi elit commodo reprehenderit\",\n  \"firebaseId\": \"consequat ullamco ea in dolor\",\n  \"accessToken\": \"aliquip\"\n}",
+											"options": {
+												"raw": {
+													"headerFamily": "json",
+													"language": "json"
+												}
+											}
+										},
+										"url": "{{baseUrl}}/v2/app/register",
+										"description": "App registration"
+									},
+									"response": [
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "POST",
+												"header": [
+													{
+														"key": "Content-Type",
+														"value": "application/json"
+													},
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"body": {
+													"mode": "raw",
+													"raw": "{\n  \"email\": \"kxaa1WFZxHy1sR@NlWSS.mztt\",\n  \"name\": \"in nisi elit commodo reprehenderit\",\n  \"firebaseId\": \"consequat ullamco ea in dolor\",\n  \"accessToken\": \"aliquip\"\n}",
+													"options": {
+														"raw": {
+															"headerFamily": "json",
+															"language": "json"
+														}
+													}
+												},
+												"url": "{{baseUrl}}/v2/app/register"
+											},
+											"status": "OK",
+											"code": 200,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"subscribed\": false,\n  \"subsciptionName\": \"velit ad\"\n}"
+										},
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "POST",
+												"header": [
+													{
+														"key": "Content-Type",
+														"value": "application/json"
+													},
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"body": {
+													"mode": "raw",
+													"raw": "{\n  \"email\": \"kxaa1WFZxHy1sR@NlWSS.mztt\",\n  \"name\": \"in nisi elit commodo reprehenderit\",\n  \"firebaseId\": \"consequat ullamco ea in dolor\",\n  \"accessToken\": \"aliquip\"\n}",
+													"options": {
+														"raw": {
+															"headerFamily": "json",
+															"language": "json"
+														}
+													}
+												},
+												"url": "{{baseUrl}}/v2/app/register"
+											},
+											"status": "Unauthorized",
+											"code": 401,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+										}
+									]
+								}
+							]
+						},
+						{
+							"name": "logout",
+							"item": [
+								{
+									"name": "App logout",
+									"request": {
+										"method": "POST",
+										"header": [
+											{
+												"key": "Content-Type",
+												"value": "application/json"
+											},
+											{
+												"key": "Accept",
+												"value": "application/json"
+											}
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"token\": \"velit\"\n}",
+											"options": {
+												"raw": {
+													"headerFamily": "json",
+													"language": "json"
+												}
+											}
+										},
+										"url": "{{baseUrl}}/v2/app/logout",
+										"description": "App logout"
+									},
+									"response": [
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "POST",
+												"header": [
+													{
+														"key": "Content-Type",
+														"value": "application/json"
+													},
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"body": {
+													"mode": "raw",
+													"raw": "{\n  \"token\": \"velit\"\n}",
+													"options": {
+														"raw": {
+															"headerFamily": "json",
+															"language": "json"
+														}
+													}
+												},
+												"url": "{{baseUrl}}/v2/app/logout"
+											},
+											"status": "OK",
+											"code": 200,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"message\": \"occaecat\"\n}"
+										},
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "POST",
+												"header": [
+													{
+														"key": "Content-Type",
+														"value": "application/json"
+													},
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"body": {
+													"mode": "raw",
+													"raw": "{\n  \"token\": \"velit\"\n}",
+													"options": {
+														"raw": {
+															"headerFamily": "json",
+															"language": "json"
+														}
+													}
+												},
+												"url": "{{baseUrl}}/v2/app/logout"
+											},
+											"status": "Bad Request",
+											"code": 400,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+										},
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "POST",
+												"header": [
+													{
+														"key": "Content-Type",
+														"value": "application/json"
+													},
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"body": {
+													"mode": "raw",
+													"raw": "{\n  \"token\": \"velit\"\n}",
+													"options": {
+														"raw": {
+															"headerFamily": "json",
+															"language": "json"
+														}
+													}
+												},
+												"url": "{{baseUrl}}/v2/app/logout"
+											},
+											"status": "Unauthorized",
+											"code": 401,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+										}
+									]
+								}
+							]
+						},
+						{
+							"name": "profiles",
+							"item": [
+								{
+									"name": "complete-profile",
+									"item": [
+										{
+											"name": "App profile completion",
+											"request": {
+												"method": "PATCH",
+												"header": [
+													{
+														"key": "Content-Type",
+														"value": "application/json"
+													},
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"body": {
+													"mode": "raw",
+													"raw": "{\n  \"website\": \"enim ad adipisicing velit ex\",\n  \"company\": \"aliquip sunt\",\n  \"postition\": \"p\",\n  \"isCompany\": true\n}",
+													"options": {
+														"raw": {
+															"headerFamily": "json",
+															"language": "json"
+														}
+													}
+												},
+												"url": "{{baseUrl}}/v2/app/profiles/complete-profile",
+												"description": "App profile completion"
+											},
+											"response": [
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "PATCH",
+														"header": [
+															{
+																"key": "Content-Type",
+																"value": "application/json"
+															},
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"body": {
+															"mode": "raw",
+															"raw": "{\n  \"website\": \"enim ad adipisicing velit ex\",\n  \"company\": \"aliquip sunt\",\n  \"postition\": \"p\",\n  \"isCompany\": true\n}",
+															"options": {
+																"raw": {
+																	"headerFamily": "json",
+																	"language": "json"
+																}
+															}
+														},
+														"url": "{{baseUrl}}/v2/app/profiles/complete-profile"
+													},
+													"status": "OK",
+													"code": 200,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"message\": \"occaecat\"\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "PATCH",
+														"header": [
+															{
+																"key": "Content-Type",
+																"value": "application/json"
+															},
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"body": {
+															"mode": "raw",
+															"raw": "{\n  \"website\": \"enim ad adipisicing velit ex\",\n  \"company\": \"aliquip sunt\",\n  \"postition\": \"p\",\n  \"isCompany\": true\n}",
+															"options": {
+																"raw": {
+																	"headerFamily": "json",
+																	"language": "json"
+																}
+															}
+														},
+														"url": "{{baseUrl}}/v2/app/profiles/complete-profile"
+													},
+													"status": "Unauthorized",
+													"code": 401,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "PATCH",
+														"header": [
+															{
+																"key": "Content-Type",
+																"value": "application/json"
+															},
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"body": {
+															"mode": "raw",
+															"raw": "{\n  \"website\": \"enim ad adipisicing velit ex\",\n  \"company\": \"aliquip sunt\",\n  \"postition\": \"p\",\n  \"isCompany\": true\n}",
+															"options": {
+																"raw": {
+																	"headerFamily": "json",
+																	"language": "json"
+																}
+															}
+														},
+														"url": "{{baseUrl}}/v2/app/profiles/complete-profile"
+													},
+													"status": "Internal Server Error",
+													"code": 500,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												}
+											]
+										}
+									]
+								}
+							]
+						},
+						{
+							"name": "projects",
+							"item": [
+								{
+									"name": "{project_uuid}",
+									"item": [
+										{
+											"name": "mcp",
+											"item": [
+												{
+													"name": "Enable/Disable MCP access of a project",
+													"request": {
+														"method": "PATCH",
+														"header": [
+															{
+																"key": "Content-Type",
+																"value": "application/json"
+															},
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"body": {
+															"mode": "raw",
+															"raw": "{\n  \"enable_mcp\": true\n}",
+															"options": {
+																"raw": {
+																	"headerFamily": "json",
+																	"language": "json"
+																}
+															}
+														},
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/mcp",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"projects",
+																":project_uuid",
+																"mcp"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid",
+																	"value": "ut proident qui dolor",
+																	"description": "(Required) "
+																}
+															]
+														},
+														"description": "Enable/Disable MCP access of a project"
+													},
+													"response": [
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "PATCH",
+																"header": [
+																	{
+																		"key": "Content-Type",
+																		"value": "application/json"
+																	},
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"body": {
+																	"mode": "raw",
+																	"raw": "{\n  \"enable_mcp\": true\n}",
+																	"options": {
+																		"raw": {
+																			"headerFamily": "json",
+																			"language": "json"
+																		}
+																	}
+																},
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/mcp",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"mcp"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "OK",
+															"code": 200,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"message\": \"occaecat\"\n}"
+														},
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "PATCH",
+																"header": [
+																	{
+																		"key": "Content-Type",
+																		"value": "application/json"
+																	},
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"body": {
+																	"mode": "raw",
+																	"raw": "{\n  \"enable_mcp\": true\n}",
+																	"options": {
+																		"raw": {
+																			"headerFamily": "json",
+																			"language": "json"
+																		}
+																	}
+																},
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/mcp",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"mcp"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "Unauthorized",
+															"code": 401,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+														},
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "PATCH",
+																"header": [
+																	{
+																		"key": "Content-Type",
+																		"value": "application/json"
+																	},
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"body": {
+																	"mode": "raw",
+																	"raw": "{\n  \"enable_mcp\": true\n}",
+																	"options": {
+																		"raw": {
+																			"headerFamily": "json",
+																			"language": "json"
+																		}
+																	}
+																},
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/mcp",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"mcp"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "Internal Server Error",
+															"code": 500,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+														}
+													]
+												}
+											]
+										},
+										{
+											"name": "re-submit",
+											"item": [
+												{
+													"name": "Resubmit an opensource project for approval",
+													"request": {
+														"method": "PATCH",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/re-submit",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"projects",
+																":project_uuid",
+																"re-submit"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid",
+																	"value": "ut proident qui dolor",
+																	"description": "(Required) "
+																}
+															]
+														},
+														"description": "Resubmit an opensource project for approval"
+													},
+													"response": [
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "PATCH",
+																"header": [
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/re-submit",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"re-submit"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "OK",
+															"code": 200,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"message\": \"occaecat\"\n}"
+														},
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "PATCH",
+																"header": [
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/re-submit",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"re-submit"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "Unauthorized",
+															"code": 401,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+														},
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "PATCH",
+																"header": [
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/re-submit",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"re-submit"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "Internal Server Error",
+															"code": 500,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+														}
+													]
+												}
+											]
+										},
+										{
+											"name": "set-status",
+											"item": [
+												{
+													"name": "Activate/Deactivate a project",
+													"request": {
+														"method": "PATCH",
+														"header": [
+															{
+																"key": "Content-Type",
+																"value": "application/json"
+															},
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"body": {
+															"mode": "raw",
+															"raw": "{\n  \"enable_project\": true\n}",
+															"options": {
+																"raw": {
+																	"headerFamily": "json",
+																	"language": "json"
+																}
+															}
+														},
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/set-status",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"projects",
+																":project_uuid",
+																"set-status"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid",
+																	"value": "ut proident qui dolor",
+																	"description": "(Required) "
+																}
+															]
+														},
+														"description": "Activate/Deactivate a project"
+													},
+													"response": [
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "PATCH",
+																"header": [
+																	{
+																		"key": "Content-Type",
+																		"value": "application/json"
+																	},
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"body": {
+																	"mode": "raw",
+																	"raw": "{\n  \"enable_project\": true\n}",
+																	"options": {
+																		"raw": {
+																			"headerFamily": "json",
+																			"language": "json"
+																		}
+																	}
+																},
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/set-status",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"set-status"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "OK",
+															"code": 200,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"message\": \"occaecat\"\n}"
+														},
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "PATCH",
+																"header": [
+																	{
+																		"key": "Content-Type",
+																		"value": "application/json"
+																	},
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"body": {
+																	"mode": "raw",
+																	"raw": "{\n  \"enable_project\": true\n}",
+																	"options": {
+																		"raw": {
+																			"headerFamily": "json",
+																			"language": "json"
+																		}
+																	}
+																},
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/set-status",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"set-status"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "Unauthorized",
+															"code": 401,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+														},
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "PATCH",
+																"header": [
+																	{
+																		"key": "Content-Type",
+																		"value": "application/json"
+																	},
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"body": {
+																	"mode": "raw",
+																	"raw": "{\n  \"enable_project\": true\n}",
+																	"options": {
+																		"raw": {
+																			"headerFamily": "json",
+																			"language": "json"
+																		}
+																	}
+																},
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/set-status",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"set-status"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "Internal Server Error",
+															"code": 500,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+														}
+													]
+												}
+											]
+										},
+										{
+											"name": "libraries",
+											"item": [
+												{
+													"name": "Upload a new library file or provide a spec URL",
+													"request": {
+														"method": "POST",
+														"header": [
+															{
+																"key": "Content-Type",
+																"value": "multipart/form-data"
+															},
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"body": {
+															"mode": "formdata",
+															"formdata": [
+																{
+																	"key": "name",
+																	"value": "quis Duis amet",
+																	"description": "(Required) ",
+																	"type": "text"
+																},
+																{
+																	"key": "version",
+																	"value": "consectetur est",
+																	"description": "(Required) ",
+																	"type": "text"
+																},
+																{
+																	"key": "library_group",
+																	"value": "aute dolor dolore adipisicing",
+																	"description": "(Required) ",
+																	"type": "text"
+																},
+																{
+																	"key": "spec_type",
+																	"value": "openapi",
+																	"description": "(Required)  (This can only be one of openapi,postman,sdk)",
+																	"type": "text"
+																},
+																{
+																	"key": "programming_language",
+																	"value": "cupidatat labore est",
+																	"type": "text"
+																},
+																{
+																	"key": "file",
+																	"type": "file",
+																	"src": []
+																},
+																{
+																	"key": "url",
+																	"value": "https://YmxHTWzrmakcqhh.ppeNH-9bz9nmd5HLh9-N-E2QjWj16,WMmHsXZ",
+																	"type": "text"
+																}
+															]
+														},
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/libraries",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"projects",
+																":project_uuid",
+																"libraries"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid",
+																	"value": "ut proident qui dolor",
+																	"description": "(Required) "
+																}
+															]
+														},
+														"description": "Upload a new library file or provide a spec URL"
+													},
+													"response": [
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "POST",
+																"header": [
+																	{
+																		"key": "Content-Type",
+																		"value": "multipart/form-data"
+																	},
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"body": {
+																	"mode": "formdata",
+																	"formdata": [
+																		{
+																			"key": "name",
+																			"value": "quis Duis amet",
+																			"description": "(Required) ",
+																			"type": "text"
+																		},
+																		{
+																			"key": "version",
+																			"value": "consectetur est",
+																			"description": "(Required) ",
+																			"type": "text"
+																		},
+																		{
+																			"key": "library_group",
+																			"value": "aute dolor dolore adipisicing",
+																			"description": "(Required) ",
+																			"type": "text"
+																		},
+																		{
+																			"key": "spec_type",
+																			"value": "openapi",
+																			"description": "(Required)  (This can only be one of openapi,postman,sdk)",
+																			"type": "text"
+																		},
+																		{
+																			"key": "programming_language",
+																			"value": "cupidatat labore est",
+																			"type": "text"
+																		},
+																		{
+																			"key": "file",
+																			"type": "file",
+																			"src": []
+																		},
+																		{
+																			"key": "url",
+																			"value": "https://YmxHTWzrmakcqhh.ppeNH-9bz9nmd5HLh9-N-E2QjWj16,WMmHsXZ",
+																			"type": "text"
+																		}
+																	]
+																},
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/libraries",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"libraries"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "OK",
+															"code": 200,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"message\": \"occaecat\"\n}"
+														},
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "POST",
+																"header": [
+																	{
+																		"key": "Content-Type",
+																		"value": "multipart/form-data"
+																	},
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"body": {
+																	"mode": "formdata",
+																	"formdata": [
+																		{
+																			"key": "name",
+																			"value": "quis Duis amet",
+																			"description": "(Required) ",
+																			"type": "text"
+																		},
+																		{
+																			"key": "version",
+																			"value": "consectetur est",
+																			"description": "(Required) ",
+																			"type": "text"
+																		},
+																		{
+																			"key": "library_group",
+																			"value": "aute dolor dolore adipisicing",
+																			"description": "(Required) ",
+																			"type": "text"
+																		},
+																		{
+																			"key": "spec_type",
+																			"value": "openapi",
+																			"description": "(Required)  (This can only be one of openapi,postman,sdk)",
+																			"type": "text"
+																		},
+																		{
+																			"key": "programming_language",
+																			"value": "cupidatat labore est",
+																			"type": "text"
+																		},
+																		{
+																			"key": "file",
+																			"type": "file",
+																			"src": []
+																		},
+																		{
+																			"key": "url",
+																			"value": "https://YmxHTWzrmakcqhh.ppeNH-9bz9nmd5HLh9-N-E2QjWj16,WMmHsXZ",
+																			"type": "text"
+																		}
+																	]
+																},
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/libraries",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"libraries"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "Bad Request",
+															"code": 400,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+														},
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "POST",
+																"header": [
+																	{
+																		"key": "Content-Type",
+																		"value": "multipart/form-data"
+																	},
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"body": {
+																	"mode": "formdata",
+																	"formdata": [
+																		{
+																			"key": "name",
+																			"value": "quis Duis amet",
+																			"description": "(Required) ",
+																			"type": "text"
+																		},
+																		{
+																			"key": "version",
+																			"value": "consectetur est",
+																			"description": "(Required) ",
+																			"type": "text"
+																		},
+																		{
+																			"key": "library_group",
+																			"value": "aute dolor dolore adipisicing",
+																			"description": "(Required) ",
+																			"type": "text"
+																		},
+																		{
+																			"key": "spec_type",
+																			"value": "openapi",
+																			"description": "(Required)  (This can only be one of openapi,postman,sdk)",
+																			"type": "text"
+																		},
+																		{
+																			"key": "programming_language",
+																			"value": "cupidatat labore est",
+																			"type": "text"
+																		},
+																		{
+																			"key": "file",
+																			"type": "file",
+																			"src": []
+																		},
+																		{
+																			"key": "url",
+																			"value": "https://YmxHTWzrmakcqhh.ppeNH-9bz9nmd5HLh9-N-E2QjWj16,WMmHsXZ",
+																			"type": "text"
+																		}
+																	]
+																},
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/libraries",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"libraries"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "Unauthorized",
+															"code": 401,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+														}
+													]
+												},
+												{
+													"name": "List libraries for a project",
+													"request": {
+														"method": "GET",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/libraries",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"projects",
+																":project_uuid",
+																"libraries"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid",
+																	"value": "ut proident qui dolor",
+																	"description": "(Required) "
+																}
+															]
+														},
+														"description": "List libraries for a project"
+													},
+													"response": [
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "GET",
+																"header": [
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/libraries",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"libraries"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "OK",
+															"code": 200,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "[]"
+														},
+														{
+															"name": "Default Response",
+															"originalRequest": {
+																"method": "GET",
+																"header": [
+																	{
+																		"key": "Accept",
+																		"value": "application/json"
+																	}
+																],
+																"url": {
+																	"raw": "{{baseUrl}}/v2/app/projects/:project_uuid/libraries",
+																	"host": [
+																		"{{baseUrl}}"
+																	],
+																	"path": [
+																		"v2",
+																		"app",
+																		"projects",
+																		":project_uuid",
+																		"libraries"
+																	],
+																	"variable": [
+																		{
+																			"key": "project_uuid"
+																		}
+																	]
+																}
+															},
+															"status": "Unauthorized",
+															"code": 401,
+															"_postman_previewlanguage": "json",
+															"header": [
+																{
+																	"key": "Content-Type",
+																	"value": "application/json"
+																}
+															],
+															"cookie": [],
+															"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+														}
+													]
+												}
+											]
+										},
+										{
+											"name": "Get a project by UUID",
+											"request": {
+												"method": "GET",
+												"header": [
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"url": {
+													"raw": "{{baseUrl}}/v2/app/projects/:project_uuid",
+													"host": [
+														"{{baseUrl}}"
+													],
+													"path": [
+														"v2",
+														"app",
+														"projects",
+														":project_uuid"
+													],
+													"variable": [
+														{
+															"key": "project_uuid",
+															"value": "ut proident qui dolor",
+															"description": "(Required) "
+														}
+													]
+												},
+												"description": "Get a project by UUID"
+											},
+											"response": [
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "GET",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/projects/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"projects",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "OK",
+													"code": 200,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"project_uuid\": \"ut Ut ex\",\n  \"name\": \"sunt voluptate officia\",\n  \"website_url\": \"laboris\",\n  \"documentation_url\": \"veniam minim\",\n  \"repository_url\": \"dolore Excepteur sit id\",\n  \"is_opensource\": true\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "GET",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/projects/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"projects",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "Unauthorized",
+													"code": 401,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "GET",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/projects/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"projects",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "Internal Server Error",
+													"code": 500,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												}
+											]
+										},
+										{
+											"name": "Delete a project",
+											"request": {
+												"method": "DELETE",
+												"header": [
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"url": {
+													"raw": "{{baseUrl}}/v2/app/projects/:project_uuid",
+													"host": [
+														"{{baseUrl}}"
+													],
+													"path": [
+														"v2",
+														"app",
+														"projects",
+														":project_uuid"
+													],
+													"variable": [
+														{
+															"key": "project_uuid",
+															"value": "ut proident qui dolor",
+															"description": "(Required) "
+														}
+													]
+												},
+												"description": "Delete a project"
+											},
+											"response": [
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "DELETE",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/projects/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"projects",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "OK",
+													"code": 200,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"message\": \"occaecat\"\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "DELETE",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/projects/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"projects",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "Unauthorized",
+													"code": 401,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "DELETE",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/projects/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"projects",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "Internal Server Error",
+													"code": 500,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												}
+											]
+										}
+									]
+								},
+								{
+									"name": "Create a new project",
+									"request": {
+										"method": "POST",
+										"header": [
+											{
+												"key": "Content-Type",
+												"value": "application/json"
+											},
+											{
+												"key": "Accept",
+												"value": "application/json"
+											}
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"name\": \"Excepteur Lorem deserunt in dolore\",\n  \"is_opensource\": true,\n  \"description\": \"consequat nostrud in Lo\",\n  \"website_url\": \"officia tempor Duis Excepteur\",\n  \"documentation_url\": \"mollit ad Lorem ea eiusmod\",\n  \"repository_url\": \"enim mollit et\"\n}",
+											"options": {
+												"raw": {
+													"headerFamily": "json",
+													"language": "json"
+												}
+											}
+										},
+										"url": "{{baseUrl}}/v2/app/projects",
+										"description": "Create a new project"
+									},
+									"response": [
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "POST",
+												"header": [
+													{
+														"key": "Content-Type",
+														"value": "application/json"
+													},
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"body": {
+													"mode": "raw",
+													"raw": "{\n  \"name\": \"Excepteur Lorem deserunt in dolore\",\n  \"is_opensource\": true,\n  \"description\": \"consequat nostrud in Lo\",\n  \"website_url\": \"officia tempor Duis Excepteur\",\n  \"documentation_url\": \"mollit ad Lorem ea eiusmod\",\n  \"repository_url\": \"enim mollit et\"\n}",
+													"options": {
+														"raw": {
+															"headerFamily": "json",
+															"language": "json"
+														}
+													}
+												},
+												"url": "{{baseUrl}}/v2/app/projects"
+											},
+											"status": "OK",
+											"code": 200,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"message\": \"occaecat\"\n}"
+										},
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "POST",
+												"header": [
+													{
+														"key": "Content-Type",
+														"value": "application/json"
+													},
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"body": {
+													"mode": "raw",
+													"raw": "{\n  \"name\": \"Excepteur Lorem deserunt in dolore\",\n  \"is_opensource\": true,\n  \"description\": \"consequat nostrud in Lo\",\n  \"website_url\": \"officia tempor Duis Excepteur\",\n  \"documentation_url\": \"mollit ad Lorem ea eiusmod\",\n  \"repository_url\": \"enim mollit et\"\n}",
+													"options": {
+														"raw": {
+															"headerFamily": "json",
+															"language": "json"
+														}
+													}
+												},
+												"url": "{{baseUrl}}/v2/app/projects"
+											},
+											"status": "Unauthorized",
+											"code": 401,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+										},
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "POST",
+												"header": [
+													{
+														"key": "Content-Type",
+														"value": "application/json"
+													},
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"body": {
+													"mode": "raw",
+													"raw": "{\n  \"name\": \"Excepteur Lorem deserunt in dolore\",\n  \"is_opensource\": true,\n  \"description\": \"consequat nostrud in Lo\",\n  \"website_url\": \"officia tempor Duis Excepteur\",\n  \"documentation_url\": \"mollit ad Lorem ea eiusmod\",\n  \"repository_url\": \"enim mollit et\"\n}",
+													"options": {
+														"raw": {
+															"headerFamily": "json",
+															"language": "json"
+														}
+													}
+												},
+												"url": "{{baseUrl}}/v2/app/projects"
+											},
+											"status": "Internal Server Error",
+											"code": 500,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+										}
+									]
+								},
+								{
+									"name": "Get projects list",
+									"request": {
+										"method": "GET",
+										"header": [
+											{
+												"key": "Accept",
+												"value": "application/json"
+											}
+										],
+										"url": "{{baseUrl}}/v2/app/projects",
+										"description": "Get projects list"
+									},
+									"response": [
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "GET",
+												"header": [
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"url": "{{baseUrl}}/v2/app/projects"
+											},
+											"status": "OK",
+											"code": 200,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "[\n  {\n    \"project_uuid\": \"dolore dolor aliquip dolore Duis\",\n    \"name\": \"Duis ad\",\n    \"website_url\": \"minim ut\",\n    \"documentation_url\": \"ad\",\n    \"repository_url\": \"enim ut\",\n    \"is_opensource\": false\n  },\n  {\n    \"project_uuid\": \"proident\",\n    \"name\": \"deserunt do dolor et\",\n    \"website_url\": \"culpa ullamco nostrud labore ad\",\n    \"documentation_url\": \"aliquip fugiat\",\n    \"repository_url\": \"consectetur ut do voluptate anim\",\n    \"is_opensource\": false\n  }\n]"
+										},
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "GET",
+												"header": [
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"url": "{{baseUrl}}/v2/app/projects"
+											},
+											"status": "Unauthorized",
+											"code": 401,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+										},
+										{
+											"name": "Default Response",
+											"originalRequest": {
+												"method": "GET",
+												"header": [
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"url": "{{baseUrl}}/v2/app/projects"
+											},
+											"status": "Internal Server Error",
+											"code": 500,
+											"_postman_previewlanguage": "json",
+											"header": [
+												{
+													"key": "Content-Type",
+													"value": "application/json"
+												}
+											],
+											"cookie": [],
+											"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+										}
+									]
+								}
+							]
+						},
+						{
+							"name": "keys",
+							"item": [
+								{
+									"name": "{project_uuid}",
+									"item": [
+										{
+											"name": "Create a new API key for a project (only one active at a time)",
+											"request": {
+												"method": "POST",
+												"header": [
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"url": {
+													"raw": "{{baseUrl}}/v2/app/keys/:project_uuid",
+													"host": [
+														"{{baseUrl}}"
+													],
+													"path": [
+														"v2",
+														"app",
+														"keys",
+														":project_uuid"
+													],
+													"variable": [
+														{
+															"key": "project_uuid",
+															"value": "ut proident qui dolor",
+															"description": "(Required) "
+														}
+													]
+												},
+												"description": "Create a new API key for a project (only one active at a time)"
+											},
+											"response": [
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "POST",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/keys/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"keys",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "OK",
+													"code": 200,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"project_key_uuid\": \"amet\",\n  \"project_uuid\": \"id aute labore commodo\",\n  \"project_key\": \"culpa\",\n  \"is_active\": true\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "POST",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/keys/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"keys",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "Unauthorized",
+													"code": 401,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "POST",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/keys/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"keys",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "Internal Server Error",
+													"code": 500,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												}
+											]
+										},
+										{
+											"name": "Get the active API key for a project",
+											"request": {
+												"method": "GET",
+												"header": [
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"url": {
+													"raw": "{{baseUrl}}/v2/app/keys/:project_uuid",
+													"host": [
+														"{{baseUrl}}"
+													],
+													"path": [
+														"v2",
+														"app",
+														"keys",
+														":project_uuid"
+													],
+													"variable": [
+														{
+															"key": "project_uuid",
+															"value": "ut proident qui dolor",
+															"description": "(Required) "
+														}
+													]
+												},
+												"description": "Get the active API key for a project"
+											},
+											"response": [
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "GET",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/keys/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"keys",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "OK",
+													"code": 200,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"project_key_uuid\": \"magna mollit laboris quis consequat\",\n  \"project_uuid\": \"reprehender\",\n  \"project_key\": \"ullamco Duis dolor\",\n  \"is_active\": false,\n  \"created_date\": \"id elit\"\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "GET",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/keys/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"keys",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "Unauthorized",
+													"code": 401,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "GET",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/keys/:project_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"keys",
+																":project_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_uuid"
+																}
+															]
+														}
+													},
+													"status": "Internal Server Error",
+													"code": 500,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												}
+											]
+										}
+									]
+								},
+								{
+									"name": "{project_key_uuid}",
+									"item": [
+										{
+											"name": "Delete (deactivate) a project API key",
+											"request": {
+												"method": "DELETE",
+												"header": [
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"url": {
+													"raw": "{{baseUrl}}/v2/app/keys/:project_key_uuid",
+													"host": [
+														"{{baseUrl}}"
+													],
+													"path": [
+														"v2",
+														"app",
+														"keys",
+														":project_key_uuid"
+													],
+													"variable": [
+														{
+															"key": "project_key_uuid",
+															"value": "ut proident qui dolor",
+															"description": "(Required) "
+														}
+													]
+												},
+												"description": "Delete (deactivate) a project API key"
+											},
+											"response": [
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "DELETE",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/keys/:project_key_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"keys",
+																":project_key_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_key_uuid"
+																}
+															]
+														}
+													},
+													"status": "OK",
+													"code": 200,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"message\": \"occaecat\"\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "DELETE",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/keys/:project_key_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"keys",
+																":project_key_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_key_uuid"
+																}
+															]
+														}
+													},
+													"status": "Unauthorized",
+													"code": 401,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "DELETE",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/keys/:project_key_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"keys",
+																":project_key_uuid"
+															],
+															"variable": [
+																{
+																	"key": "project_key_uuid"
+																}
+															]
+														}
+													},
+													"status": "Internal Server Error",
+													"code": 500,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												}
+											]
+										}
+									]
+								}
+							]
+						},
+						{
+							"name": "libraries",
+							"item": [
+								{
+									"name": "{library_uuid}",
+									"item": [
+										{
+											"name": "Get a library by UUID",
+											"request": {
+												"method": "GET",
+												"header": [
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"url": {
+													"raw": "{{baseUrl}}/v2/app/libraries/:library_uuid",
+													"host": [
+														"{{baseUrl}}"
+													],
+													"path": [
+														"v2",
+														"app",
+														"libraries",
+														":library_uuid"
+													],
+													"variable": [
+														{
+															"key": "library_uuid",
+															"value": "ut proident qui dolor",
+															"description": "(Required) "
+														}
+													]
+												},
+												"description": "Get a library by UUID"
+											},
+											"response": [
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "GET",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/libraries/:library_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"libraries",
+																":library_uuid"
+															],
+															"variable": [
+																{
+																	"key": "library_uuid"
+																}
+															]
+														}
+													},
+													"status": "OK",
+													"code": 200,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "GET",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/libraries/:library_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"libraries",
+																":library_uuid"
+															],
+															"variable": [
+																{
+																	"key": "library_uuid"
+																}
+															]
+														}
+													},
+													"status": "Unauthorized",
+													"code": 401,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												}
+											]
+										},
+										{
+											"name": "Delete a library",
+											"request": {
+												"method": "DELETE",
+												"header": [
+													{
+														"key": "Accept",
+														"value": "application/json"
+													}
+												],
+												"url": {
+													"raw": "{{baseUrl}}/v2/app/libraries/:library_uuid",
+													"host": [
+														"{{baseUrl}}"
+													],
+													"path": [
+														"v2",
+														"app",
+														"libraries",
+														":library_uuid"
+													],
+													"variable": [
+														{
+															"key": "library_uuid",
+															"value": "ut proident qui dolor",
+															"description": "(Required) "
+														}
+													]
+												},
+												"description": "Delete a library"
+											},
+											"response": [
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "DELETE",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/libraries/:library_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"libraries",
+																":library_uuid"
+															],
+															"variable": [
+																{
+																	"key": "library_uuid"
+																}
+															]
+														}
+													},
+													"status": "OK",
+													"code": 200,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"message\": \"occaecat\"\n}"
+												},
+												{
+													"name": "Default Response",
+													"originalRequest": {
+														"method": "DELETE",
+														"header": [
+															{
+																"key": "Accept",
+																"value": "application/json"
+															}
+														],
+														"url": {
+															"raw": "{{baseUrl}}/v2/app/libraries/:library_uuid",
+															"host": [
+																"{{baseUrl}}"
+															],
+															"path": [
+																"v2",
+																"app",
+																"libraries",
+																":library_uuid"
+															],
+															"variable": [
+																{
+																	"key": "library_uuid"
+																}
+															]
+														}
+													},
+													"status": "Unauthorized",
+													"code": 401,
+													"_postman_previewlanguage": "json",
+													"header": [
+														{
+															"key": "Content-Type",
+															"value": "application/json"
+														}
+													],
+													"cookie": [],
+													"body": "{\n  \"error\": \"adipisicing laboris sit ipsum\"\n}"
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3000"
+		}
+	]
+}

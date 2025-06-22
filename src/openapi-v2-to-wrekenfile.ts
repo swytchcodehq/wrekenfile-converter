@@ -1,0 +1,463 @@
+// openapi-to-wreken.ts
+import * as fs from 'fs';
+import * as path from 'path';
+import { load, dump } from 'js-yaml';
+
+type Primitive = 'STRING' | 'INT' | 'FLOAT' | 'BOOL' | 'TIMESTAMP' | 'DATE' | 'ANY' | 'UUID';
+const externalRefCache: Record<string, any> = {};
+
+function mapType(type: string, format?: string): Primitive {
+  if (format === 'uuid') return 'UUID';
+  if (format === 'date-time') return 'TIMESTAMP';
+  if (format === 'binary') return 'STRING'; // File uploads
+  const t = type?.toLowerCase();
+  if (t === 'string') return 'STRING';
+  if (t === 'integer' || t === 'int') return 'INT';
+  if (t === 'number') return 'FLOAT';
+  if (t === 'boolean') return 'BOOL';
+  return 'ANY';
+}
+
+function generateDesc(op: any, method: string, path: string): string {
+  if (op.summary) return op.summary;
+  if (op.description) return op.description;
+  if (op.operationId) return `Perform operation ${op.operationId}`;
+  const verb = {
+    get: 'Fetch',
+    post: 'Create',
+    put: 'Update',
+    delete: 'Delete',
+    patch: 'Modify',
+  }[method.toLowerCase()] || 'Call';
+  const entity = path.split('/').filter(p => p && !p.startsWith('{')).pop() || 'resource';
+  return `${verb} ${entity}`;
+}
+
+function resolveRef(ref: string, spec: any, baseDir: string): any {
+  if (ref.startsWith('#/')) {
+    return ref.split('/').slice(1).reduce((o, k) => o?.[k], spec);
+  }
+  const [filePath, internal] = ref.split('#');
+  const fullPath = path.resolve(baseDir, filePath);
+  if (!externalRefCache[fullPath]) {
+    const content = fs.readFileSync(fullPath, 'utf8');
+    externalRefCache[fullPath] = load(content);
+  }
+  return internal
+    ? internal.split('/').slice(1).reduce((o, k) => o?.[k], externalRefCache[fullPath])
+    : externalRefCache[fullPath];
+}
+
+function parseSchema(name: string, schema: any, spec: any, baseDir: string, depth = 0): any[] {
+  if (depth > 3) return [];
+  if (schema.$ref) return parseSchema(name, resolveRef(schema.$ref, spec, baseDir), spec, baseDir, depth + 1);
+  if (schema.allOf) return schema.allOf.flatMap((s: any) => parseSchema(name, s, spec, baseDir, depth + 1));
+  if (schema.oneOf || schema.anyOf) {
+    return [{
+      name: 'variant',
+      type: `STRUCT(${name}_Union)`,
+      required: 'OPTIONAL'
+    }];
+  }
+
+  // Handle primitive types - return empty array (no struct needed)
+  if (schema.type && schema.type !== 'object' && schema.type !== 'array') {
+    return [];
+  }
+
+  // Handle empty objects (no properties) - return empty array
+  if (schema.type === 'object' && (!schema.properties || Object.keys(schema.properties).length === 0)) {
+    return [];
+  }
+
+  const fields: any[] = [];
+
+  if (schema.discriminator?.propertyName) {
+    fields.push({
+      name: schema.discriminator.propertyName,
+      type: 'STRING',
+      required: 'REQUIRED',
+    });
+  }
+
+  if (schema.type === 'object' && schema.properties) {
+    for (const [key, prop] of Object.entries<any>(schema.properties)) {
+      let type = 'ANY';
+      if (prop.$ref) type = `STRUCT(${prop.$ref.split('/').pop()})`;
+      else if (prop.type === 'array') {
+        if (prop.items?.$ref) {
+          type = `[]STRUCT(${prop.items.$ref.split('/').pop()})`;
+        } else {
+          type = `[]${mapType(prop.items?.type)}`;
+        }
+      } else {
+        type = mapType(prop.type, prop.format);
+      }
+      
+      // Use the required field from the OpenAPI spec
+      const required = (schema.required || []).includes(key) ? 'REQUIRED' : 'OPTIONAL';
+      
+      fields.push({
+        name: key,
+        type,
+        required,
+      });
+    }
+  }
+
+  return fields;
+}
+
+function generateStructName(operationId: string, method: string, path: string, suffix: string): string {
+  if (operationId) {
+    return `${operationId}${suffix}`;
+  }
+  // Generate from path and method
+  const pathParts = path.replace(/[\/{}]/g, '_').replace(/^_|_$/g, '');
+  return `${method}_${pathParts}${suffix}`;
+}
+
+function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
+  const structs: Record<string, any[]> = {};
+  const definitions = spec.definitions || {};
+  
+  // Extract schemas from definitions (OpenAPI v2 equivalent of components.schemas)
+  for (const name in definitions) {
+    const fields = parseSchema(name, definitions[name], spec, baseDir);
+    // Always add the struct, even if empty
+    structs[name] = fields;
+    if (definitions[name].oneOf || definitions[name].anyOf) {
+      structs[`${name}_Union`] = [{ name: 'value', type: 'ANY', required: 'OPTIONAL' }];
+    }
+  }
+  
+  // Extract inline schemas from operations
+  for (const [pathStr, methods] of Object.entries<any>(spec.paths)) {
+    for (const [method, op] of Object.entries<any>(methods)) {
+      const operationId = op.operationId || `${method}-${pathStr.replace(/[\/{}]/g, '-')}`;
+      
+      // Extract request body schemas (OpenAPI v2 uses parameters with in: body)
+      if (op.parameters) {
+        for (const param of op.parameters) {
+          if (param.in === 'body' && param.schema && !param.schema.$ref) {
+            // Inline schema - create a struct for it only if it has fields
+            const requestStructName = generateStructName(operationId, method, pathStr, 'Request');
+            const fields = parseSchema(requestStructName, param.schema, spec, baseDir);
+            if (fields.length > 0) {
+              structs[requestStructName] = fields;
+            }
+          }
+        }
+      }
+      
+      // Extract response schemas (OpenAPI v2 has schema directly in response)
+      if (op.responses) {
+        for (const [code, response] of Object.entries<any>(op.responses)) {
+          if (response.schema && !response.schema.$ref) {
+            // Inline schema - create a struct for it only if it has fields
+            const responseStructName = generateStructName(operationId, method, pathStr, `Response${code}`);
+            const fields = parseSchema(responseStructName, response.schema, spec, baseDir);
+            if (fields.length > 0) {
+              structs[responseStructName] = fields;
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  return structs;
+}
+
+function getContentTypeAndBodyType(op: any): { contentType: string; bodyType: string } {
+  // Check if there are formData parameters
+  const hasFormData = op.parameters?.some((param: any) => param.in === 'formData');
+  
+  if (hasFormData) {
+    return { contentType: 'multipart/form-data', bodyType: 'FORM' };
+  }
+  
+  // OpenAPI v2 determines content type from consumes array or defaults
+  const consumes = op.consumes || ['application/json'];
+  const contentType = consumes[0] || 'application/json';
+  
+  let bodyType = 'RAW';
+  if (contentType === 'multipart/form-data') {
+    bodyType = 'FORM';
+  } else if (contentType === 'application/x-www-form-urlencoded') {
+    bodyType = 'FORM';
+  } else if (contentType === 'application/json') {
+    bodyType = 'JSON';
+  }
+
+  return { contentType, bodyType };
+}
+
+function getHeadersForOperation(op: any, spec: any): Record<string, string>[] {
+  const { contentType } = getContentTypeAndBodyType(op);
+  
+  // Use a Map to prevent duplicate headers
+  const headerMap = new Map<string, string>();
+  const cookieMap = new Map<string, string>();
+  
+  // Add Content-Type header
+  headerMap.set('Content-Type', contentType);
+  
+  // Add security headers based on the operation's security requirements
+  const security = op.security || spec.security || [];
+  
+  for (const securityRequirement of security) {
+    for (const [schemeName, scopes] of Object.entries(securityRequirement)) {
+      const scheme = spec.securityDefinitions?.[schemeName];
+      if (scheme) {
+        if (scheme.type === 'basic') {
+          headerMap.set('Authorization', 'basic_auth');
+        } else if (scheme.type === 'apiKey') {
+          if (scheme.in === 'header') {
+            headerMap.set(scheme.name, `<${scheme.name.toUpperCase()}>`);
+          } else if (scheme.in === 'query') {
+            // Query parameters are handled in extractParameters
+          } else if (scheme.in === 'cookie') {
+            cookieMap.set(scheme.name, `<${scheme.name.toUpperCase()}>`);
+          }
+        } else if (scheme.type === 'oauth2') {
+          headerMap.set('Authorization', 'bearer_token');
+        }
+      }
+    }
+  }
+  
+  // Check if Authorization is used as a parameter but not defined in securityDefinitions
+  if (op.parameters) {
+    for (const param of op.parameters) {
+      if (param.in === 'header' && param.name === 'Authorization' && !headerMap.has('Authorization')) {
+        headerMap.set('Authorization', 'bearer_token');
+      }
+    }
+  }
+  
+  // Convert maps to arrays
+  const headers: Record<string, string>[] = [];
+  for (const [key, value] of headerMap) {
+    headers.push({ [key]: value });
+  }
+  for (const [key, value] of cookieMap) {
+    headers.push({ [`Cookie-${key}`]: value });
+  }
+  
+  return headers;
+}
+
+function extractParameters(op: any, spec: any): any[] {
+  const inputParams: any[] = [];
+  
+  // Handle path, query, and header parameters
+  if (op.parameters) {
+    for (let param of op.parameters) {
+      // Resolve parameter references
+      if (param.$ref) {
+        param = resolveRef(param.$ref, spec, path.dirname(spec.swaggerFile));
+      }
+      
+      // Skip body and formData parameters, they are handled in extractRequestBody
+      if (param.in === 'body' || param.in === 'formData') {
+        continue;
+      }
+      
+      const paramType = param.in || 'query';
+      const paramName = param.name;
+      const paramSchema = param.schema || {}; // Schema is sometimes at root of param
+      const paramRequired = param.required ? 'REQUIRED' : 'OPTIONAL';
+      
+      let type = 'STRING';
+      if (param.type) {
+        type = mapType(param.type, param.format);
+      } else if (paramSchema.type) {
+        type = mapType(paramSchema.type, paramSchema.format);
+      }
+      
+      inputParams.push({
+        name: paramName,
+        type,
+        required: paramRequired,
+        location: paramType.toUpperCase(), // PATH, QUERY, HEADER
+      });
+    }
+  }
+  
+  return inputParams;
+}
+
+function extractRequestBody(op: any, operationId: string, method: string, path: string): any[] {
+  const inputParams: any[] = [];
+  const bodyParam = (op.parameters || []).find((p: any) => p.in === 'body');
+
+  if (bodyParam) {
+    let type: string;
+    if (bodyParam.schema?.$ref) {
+      type = `STRUCT(${bodyParam.schema.$ref.split('/').pop()})`;
+    } else {
+      // Inline schema - use generated struct name
+      const requestStructName = generateStructName(operationId, method, path, 'Request');
+      type = `STRUCT(${requestStructName})`;
+    }
+    inputParams.push({
+      name: 'body',
+      type,
+      required: bodyParam.required ? 'REQUIRED' : 'OPTIONAL',
+    });
+  }
+  
+  // Handle formData for multipart/form-data
+  if (op.parameters) {
+    for (const param of op.parameters) {
+      if (param.in === 'formData') {
+        inputParams.push({
+          name: param.name,
+          type: param.type === 'file' ? 'FILE' : mapType(param.type, param.format),
+          required: param.required ? 'REQUIRED' : 'OPTIONAL',
+        });
+      }
+    }
+  }
+
+  return inputParams;
+}
+
+function extractResponses(op: any, operationId: string, method: string, path: string): any[] {
+  const returns: any[] = [];
+
+  // Handle all response codes (success and error)
+  for (const [code, response] of Object.entries<any>(op.responses || {})) {
+    let returnType = 'ANY';
+    if (response.schema) {
+      if (response.schema.$ref) {
+        returnType = `STRUCT(${response.schema.$ref.split('/').pop()})`;
+      } else if (response.schema.type === 'array') {
+        if (response.schema.items?.$ref) {
+          returnType = `[]STRUCT(${response.schema.items.$ref.split('/').pop()})`;
+        } else {
+          returnType = `[]${mapType(response.schema.items?.type)}`;
+        }
+      } else if (response.schema.type === 'object') {
+        // Inline schema - use generated struct name
+        const responseStructName = generateStructName(operationId, method, path, `Response${code}`);
+        returnType = `STRUCT(${responseStructName})`;
+      }
+    } else if (code === '204' || response.description === 'No Content') {
+      returnType = 'VOID';
+    }
+
+    returns.push({
+      RETURNTYPE: returnType,
+      RETURNNAME: 'response',
+      CODE: code === 'default' ? '500' : code,
+    });
+  }
+
+  return returns;
+}
+
+function extractInterfaces(spec: any): Record<string, any> {
+  const base = `${spec.schemes?.[0] || 'https'}://${spec.host}${spec.basePath || ''}`;
+  const interfaces: Record<string, any> = {};
+  
+  // Valid HTTP methods
+  const validMethods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options', 'trace'];
+  
+  for (const [pathStr, methods] of Object.entries<any>(spec.paths)) {
+    for (const [method, op] of Object.entries<any>(methods)) {
+      // Skip extension fields (x-*) and only process valid HTTP methods
+      if (method.startsWith('x-') || !validMethods.includes(method.toLowerCase())) {
+        continue;
+      }
+      
+      const operationId = op.operationId || `${method}-${pathStr.replace(/[\/{}]/g, '-')}`;
+      const alias = operationId;
+      const endpoint = pathStr.includes('{') ? `\`${base}${pathStr}\`` : `${base}${pathStr}`;
+      
+      // Check if operation is hidden from docs
+      const isPrivate = op['x-hidden-from-docs'] === true;
+      const visibility = isPrivate ? 'PRIVATE' : 'PUBLIC';
+      
+      const { bodyType } = getContentTypeAndBodyType(op);
+      const headers = getHeadersForOperation(op, spec);
+      const pathQueryHeaderParams = extractParameters(op, spec);
+      const bodyParams = extractRequestBody(op, operationId, method, pathStr);
+      const inputParams = [...pathQueryHeaderParams, ...bodyParams];
+      const returns = extractResponses(op, operationId, method, pathStr);
+
+      interfaces[alias] = {
+        DESC: generateDesc(op, method, pathStr),
+        ENDPOINT: endpoint,
+        VISIBILITY: visibility,
+        HTTP: {
+          METHOD: method.toUpperCase(),
+          HEADERS: headers,
+          BODYTYPE: bodyType,
+        },
+        INPUTS: inputParams,
+        RETURNS: returns,
+      };
+    }
+  }
+  return interfaces;
+}
+
+function extractSecurityDefaults(spec: any): any[] {
+  const defs: any[] = [];
+  const securityDefinitions = spec.securityDefinitions || {};
+  
+  for (const [name, scheme] of Object.entries<any>(securityDefinitions)) {
+    if (scheme.type === 'basic') {
+      defs.push({ basic_auth: 'Basic <BASE64>' });
+    } else if (scheme.type === 'apiKey') {
+      if (scheme.in === 'header') {
+        defs.push({ [scheme.name.toLowerCase()]: `<${scheme.name.toUpperCase()}>` });
+      } else if (scheme.in === 'query') {
+        defs.push({ [`query_${scheme.name.toLowerCase()}`]: `<${scheme.name.toUpperCase()}>` });
+      }
+    } else if (scheme.type === 'oauth2') {
+      defs.push({ bearer_token: 'BEARER <ACCESS_TOKEN>' });
+    }
+  }
+  
+  return defs;
+}
+
+function generateWrekenfile(spec: any, baseDir: string): string {
+  // Add swaggerFile path to spec for ref resolution
+  spec.swaggerFile = baseDir;
+
+  return dump({
+    VERSION: '1.2',
+    INIT: {
+      DEFAULTS: [
+        ...extractSecurityDefaults(spec),
+        { w_base_url: `${spec.schemes?.[0] || 'https'}://${spec.host}${spec.basePath || ''}` },
+      ],
+    },
+    INTERFACES: extractInterfaces(spec),
+    STRUCTS: extractStructs(spec, baseDir),
+  }, { noArrayIndent: true });
+}
+
+// MAIN
+const inputFile = process.argv[2];
+if (!inputFile) {
+  console.error('❌ Please provide a path to an OpenAPI v2 file.');
+  process.exit(1);
+}
+const baseDir = path.dirname(inputFile);
+const openapi = load(fs.readFileSync(inputFile, 'utf8'));
+
+// Attach the base directory to the spec object for later use in resolving $refs
+(openapi as any).swaggerFile = inputFile;
+
+const output = generateWrekenfile(openapi, baseDir);
+fs.writeFileSync('./Wrekenfile.yaml', output);
+console.log('✅ Wrekenfile generated at ./Wrekenfile.yaml');
+
+// Export for programmatic use
+export { generateWrekenfile };
+ 

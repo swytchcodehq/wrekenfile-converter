@@ -1,0 +1,82 @@
+{
+  "name": "wrekenfile-converter",
+  "version": "1.0.0",
+  "description": "Convert OpenAPI and Postman specs to Wrekenfile format with mini-chunking for vector DB storage",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
+    "dev": "tsc --watch",
+    "convert": "node dist/openapi-to-wreken.js",
+    "convert-v2": "node dist/openapi-v2-to-wrekenfile.js",
+    "convert-postman": "node dist/postman-to-wrekenfile.js",
+    "validate": "node dist/wrekenfile-validator.js",
+    "mini": "node dist/mini-wrekenfile-generator.js",
+    "example": "node dist/example-usage.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "wrekenfile",
+    "openapi",
+    "swagger",
+    "postman",
+    "api",
+    "converter",
+    "yaml",
+    "vector-db",
+    "ai"
+  ],
+  "author": "",
+  "license": "ISC",
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "wrekenfile.md"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./converter": {
+      "import": "./dist/openapi-to-wreken.js",
+      "require": "./dist/openapi-to-wreken.js",
+      "types": "./dist/openapi-to-wreken.d.ts"
+    },
+    "./converter-v2": {
+      "import": "./dist/openapi-v2-to-wrekenfile.js",
+      "require": "./dist/openapi-v2-to-wrekenfile.js",
+      "types": "./dist/openapi-v2-to-wrekenfile.d.ts"
+    },
+    "./converter-postman": {
+      "import": "./dist/postman-to-wrekenfile.js",
+      "require": "./dist/postman-to-wrekenfile.js",
+      "types": "./dist/postman-to-wrekenfile.d.ts"
+    },
+    "./validator": {
+      "import": "./dist/wrekenfile-validator.js",
+      "require": "./dist/wrekenfile-validator.js",
+      "types": "./dist/wrekenfile-validator.d.ts"
+    },
+    "./mini-generator": {
+      "import": "./dist/mini-wrekenfile-generator.js",
+      "require": "./dist/mini-wrekenfile-generator.js",
+      "types": "./dist/mini-wrekenfile-generator.d.ts"
+    }
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.10.5",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
