@@ -1,4 +1,4 @@
-# Wrekenfile Converter
+# Wrekenfile Converter (Library)
 
 A comprehensive TypeScript/JavaScript library for converting OpenAPI specifications (v2 and v3) and Postman collections into [Wrekenfile](./wrekenfile.md) YAML format, with advanced mini-chunking capabilities for vector database storage and AI context management.
 
@@ -20,110 +20,80 @@ A comprehensive TypeScript/JavaScript library for converting OpenAPI specificati
 npm install wrekenfile-converter
 ```
 
-### From Source
+or
 
 ```bash
-git clone <repository-url>
-cd wrekenfile-converter
-npm install
-npm run build
+yarn add wrekenfile-converter
 ```
 
-## Quick Start
+## Usage
 
-### Command Line Usage
-
-```bash
-# Convert OpenAPI v3 spec
-npm run convert plaid.yml
-
-# Convert OpenAPI v2 (Swagger) spec  
-npm run convert-v2 stripe.yaml
-
-# Convert Postman collection
-npm run convert-postman "Swytchcode API Docs.postman_collection.json"
-
-# Validate a Wrekenfile
-npm run validate Wrekenfile.yaml
-
-# Generate mini Wrekenfiles for vector DB
-npm run mini Wrekenfile.yaml ./mini-chunks
-```
-
-### Programmatic Usage
+### Importing the Library
 
 ```typescript
-import { 
-  generateWrekenfile,
-  generateWrekenfileV2,
-  generateWrekenfileFromPostman,
+import {
+  generateWrekenfile, // OpenAPI v3
+  generateWrekenfileV2, // OpenAPI v2 (Swagger)
+  generateWrekenfileFromPostman, // Postman collections
   validateWrekenfile,
   generateMiniWrekenfiles,
-  MiniWrekenfile
+  MiniWrekenfile,
+  ValidationResult
 } from 'wrekenfile-converter';
-
-// Convert OpenAPI v3
-const wrekenfile = generateWrekenfile(openapiSpec, './');
-
-// Convert OpenAPI v2
-const wrekenfileV2 = generateWrekenfileV2(swaggerSpec, './');
-
-// Convert Postman collection
-const wrekenfilePostman = generateWrekenfileFromPostman(collection, variables);
-
-// Validate Wrekenfile
-const validation = validateWrekenfile('./Wrekenfile.yaml');
-console.log(validation.isValid ? '✅ Valid' : '❌ Invalid');
-
-// Generate mini Wrekenfiles
-const miniFiles: MiniWrekenfile[] = generateMiniWrekenfiles('./Wrekenfile.yaml');
 ```
 
-## Mini Wrekenfile Generation
+### Convert OpenAPI v3 to Wrekenfile
 
-The mini Wrekenfile generator creates focused, self-contained chunks perfect for vector database storage and AI context management.
+```typescript
+import fs from 'fs';
+import yaml from 'js-yaml';
+import { generateWrekenfile } from 'wrekenfile-converter';
 
-### Features
+const fileContent = fs.readFileSync('./openapi.yaml', 'utf8');
+const openapiSpec = yaml.load(fileContent);
+const wrekenfileYaml = generateWrekenfile(openapiSpec, './');
+```
 
-- **Endpoint Grouping**: All methods for a single endpoint in one file
-- **Complete Dependencies**: All required structs and their nested dependencies included
-- **Vector DB Ready**: Returns array with content and metadata for batch uploads
-- **AI Context Optimized**: Reduces context size from 1000+ lines to 50-200 lines per endpoint
+### Convert OpenAPI v2 (Swagger) to Wrekenfile
 
-### Usage
+```typescript
+import fs from 'fs';
+import yaml from 'js-yaml';
+import { generateWrekenfile as generateWrekenfileV2 } from 'wrekenfile-converter';
+
+const fileContent = fs.readFileSync('./swagger.yaml', 'utf8');
+const swaggerSpec = yaml.load(fileContent);
+const wrekenfileYaml = generateWrekenfileV2(swaggerSpec, './');
+```
+
+### Convert Postman Collection to Wrekenfile
+
+```typescript
+import fs from 'fs';
+import { generateWrekenfileFromPostman } from 'wrekenfile-converter';
+
+const collection = JSON.parse(fs.readFileSync('./collection.json', 'utf8'));
+const variables = {}; // Optionally provide Postman environment variables
+const wrekenfileYaml = generateWrekenfileFromPostman(collection, variables);
+```
+
+### Validate a Wrekenfile
+
+```typescript
+import { validateWrekenfile } from 'wrekenfile-converter';
+
+const result = validateWrekenfile('./Wrekenfile.yaml');
+console.log(result.isValid ? '✅ Valid' : '❌ Invalid');
+console.log(result.errors, result.warnings);
+```
+
+### Generate Mini Wrekenfiles
 
 ```typescript
 import { generateMiniWrekenfiles, MiniWrekenfile } from 'wrekenfile-converter';
 
-// Generate all mini Wrekenfiles
-const miniWrekenfiles: MiniWrekenfile[] = generateMiniWrekenfiles('./Wrekenfile.yaml');
-
-// Each mini Wrekenfile contains:
-// - content: Complete YAML content
-// - metadata: { endpoint, methods, structs, filename }
-
-// Prepare for vector DB
-const vectorDBData = miniWrekenfiles.map((miniFile, index) => ({
-  id: `wrekenfile-chunk-${index}`,
-  content: miniFile.content,
-  metadata: {
-    ...miniFile.metadata,
-    source: 'wrekenfile',
-    chunk_type: 'endpoint_group',
-    created_at: new Date().toISOString()
-  }
-}));
-```
-
-### Example Output
-
-```bash
-npm run mini Wrekenfile.yaml
-
-# Generates files like:
-# - mini-v2-app-projects.yaml (POST, GET methods)
-# - mini-v2-app-authenticate.yaml (POST method)  
-# - mini-v2-app-projects-project_uuid.yaml (GET, DELETE methods)
+const miniFiles: MiniWrekenfile[] = generateMiniWrekenfiles('./Wrekenfile.yaml');
+// Each miniFile contains { content, metadata }
 ```
 
 ## API Reference
@@ -204,76 +174,11 @@ dist/                           # Compiled JavaScript + types
 ├── index.d.ts
 └── ... (all compiled files)
 
-mini-wrekenfiles/               # Generated mini chunks
+mini-wrekenfiles/               # Generated mini chunks (if you save them)
 ├── mini-v2-app-projects.yaml
 ├── mini-v2-app-authenticate.yaml
 └── ...
 ```
-
-### Integration as Subproject
-
-This library is designed to work seamlessly as a dependency in larger projects:
-
-```typescript
-// In your main project
-import { 
-  generateMiniWrekenfiles,
-  validateWrekenfile 
-} from 'wrekenfile-converter';
-
-// Use in your vector DB pipeline
-async function processWrekenfile(filePath: string) {
-  // Validate first
-  const validation = validateWrekenfile(filePath);
-  if (!validation.isValid) {
-    throw new Error('Invalid Wrekenfile');
-  }
-  
-  // Generate chunks
-  const chunks = generateMiniWrekenfiles(filePath);
-  
-  // Upload to vector DB
-  for (const chunk of chunks) {
-    await vectorDB.upsert({
-      content: chunk.content,
-      metadata: chunk.metadata
-    });
-  }
-}
-```
-
-## Response Types
-
-All converters include complete response type information:
-
-```yaml
-RETURNS:
-  - RETURNTYPE: STRUCT(success_response)
-    RETURNNAME: response
-    CODE: '200'
-  - RETURNTYPE: STRUCT(error_400)
-    RETURNNAME: response
-    CODE: '400'
-  - RETURNTYPE: STRUCT(error_403)
-    RETURNNAME: response
-    CODE: '403'
-  - RETURNTYPE: VOID
-    RETURNNAME: response
-    CODE: '204'
-```
-
-This makes it easy for AI systems to find and use the correct response structs for any HTTP status code.
-
-## Wrekenfile Format
-
-The library generates Wrekenfile v1.2 compatible YAML files with:
-
-- **VERSION**: Wrekenfile version
-- **INIT**: Default configuration and security settings
-- **INTERFACES**: API endpoints with HTTP methods, inputs, and returns
-- **STRUCTS**: Data structure definitions
-
-See [wrekenfile.md](./wrekenfile.md) for the complete specification.
 
 ## License
 

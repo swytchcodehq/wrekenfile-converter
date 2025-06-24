@@ -150,6 +150,9 @@ function parseYamlRobust(fileContent: string): WrekenfileStructure | null {
 }
 
 function validateWrekenfile(filePath: string): ValidationResult {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error("Argument 'filePath' is required and must be a string");
+  }
   const result: ValidationResult = {
     isValid: true,
     errors: [],

@@ -256,6 +256,9 @@ function extractParameters(op: any, spec: any): any[] {
     for (let param of op.parameters) {
       // Resolve parameter references
       if (param.$ref) {
+        if (!spec.swaggerFile) {
+          throw new Error("spec.swaggerFile is undefined. Please provide a valid baseDir when calling generateWrekenfile, or ensure all refs are internal.");
+        }
         param = resolveRef(param.$ref, spec, path.dirname(spec.swaggerFile));
       }
       
@@ -426,6 +429,12 @@ function extractSecurityDefaults(spec: any): any[] {
 }
 
 function generateWrekenfile(spec: any, baseDir: string): string {
+  if (!spec || typeof spec !== 'object') {
+    throw new Error("Argument 'spec' is required and must be an object");
+  }
+  if (!baseDir || typeof baseDir !== 'string') {
+    throw new Error("Argument 'baseDir' is required and must be a string");
+  }
   // Add swaggerFile path to spec for ref resolution
   spec.swaggerFile = baseDir;
 
@@ -443,20 +452,20 @@ function generateWrekenfile(spec: any, baseDir: string): string {
 }
 
 // MAIN
-const inputFile = process.argv[2];
-if (!inputFile) {
-  console.error('❌ Please provide a path to an OpenAPI v2 file.');
-  process.exit(1);
+if (require.main === module) {
+  const inputFile = process.argv[2];
+  if (!inputFile) {
+    console.error('❌ Please provide a path to an OpenAPI v2 file.');
+    process.exit(1);
+  }
+  const baseDir = path.dirname(inputFile);
+  const openapi = load(fs.readFileSync(inputFile, 'utf8'));
+  // Attach the base directory to the spec object for later use in resolving $refs
+  (openapi as any).swaggerFile = inputFile;
+  const output = generateWrekenfile(openapi, baseDir);
+  fs.writeFileSync('./Wrekenfile.yaml', output);
+  console.log('✅ Wrekenfile generated at ./Wrekenfile.yaml');
 }
-const baseDir = path.dirname(inputFile);
-const openapi = load(fs.readFileSync(inputFile, 'utf8'));
-
-// Attach the base directory to the spec object for later use in resolving $refs
-(openapi as any).swaggerFile = inputFile;
-
-const output = generateWrekenfile(openapi, baseDir);
-fs.writeFileSync('./Wrekenfile.yaml', output);
-console.log('✅ Wrekenfile generated at ./Wrekenfile.yaml');
 
 // Export for programmatic use
 export { generateWrekenfile };

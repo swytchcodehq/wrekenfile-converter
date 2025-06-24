@@ -465,6 +465,12 @@ function extractSecurityDefaults(spec: any): any[] {
 }
 
 function generateWrekenfile(spec: any, baseDir: string): string {
+  if (!spec || typeof spec !== 'object') {
+    throw new Error("Argument 'spec' is required and must be an object");
+  }
+  if (!baseDir || typeof baseDir !== 'string') {
+    throw new Error("Argument 'baseDir' is required and must be a string");
+  }
   return dump({
     VERSION: '1.2',
     INIT: {
@@ -477,14 +483,6 @@ function generateWrekenfile(spec: any, baseDir: string): string {
     STRUCTS: extractStructs(spec, baseDir),
   });
 }
-
-// MAIN
-const inputFile = process.argv[2];
-const baseDir = path.dirname(inputFile);
-const openapi = load(fs.readFileSync(inputFile, 'utf8'));
-const output = generateWrekenfile(openapi, baseDir);
-fs.writeFileSync('./Wrekenfile.yaml', output);
-console.log('✅ Wrekenfile generated at ./Wrekenfile.yaml');
 
 // Export for programmatic use
 export { generateWrekenfile };

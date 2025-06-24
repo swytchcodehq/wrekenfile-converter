@@ -24,11 +24,13 @@ interface WrekenfileData {
  * Generates mini Wrekenfiles by grouping interfaces by endpoint
  * Each mini Wrekenfile contains all methods for a single endpoint plus their required structs
  */
-export function generateMiniWrekenfiles(wrekenfilePath: string): MiniWrekenfile[] {
+export function generateMiniWrekenfiles(wrekenfileContent: string): MiniWrekenfile[] {
+  if (!wrekenfileContent || typeof wrekenfileContent !== 'string') {
+    throw new Error("Argument 'wrekenfileContent' is required and must be a string");
+  }
   try {
-    // Read and parse the main Wrekenfile
-    const fileContent = fs.readFileSync(wrekenfilePath, 'utf8');
-    const data = yaml.load(fileContent) as WrekenfileData;
+    // Parse the main Wrekenfile from YAML string
+    const data = yaml.load(wrekenfileContent) as WrekenfileData;
     
     if (!data.INTERFACES) {
       throw new Error('No INTERFACES section found in Wrekenfile');
@@ -236,35 +238,4 @@ export function saveMiniWrekenfiles(miniWrekenfiles: MiniWrekenfile[], outputDir
   }
 }
 
-/**
- * CLI function for testing
- */
-if (require.main === module) {
-  const args = process.argv.slice(2);
-  if (args.length === 0) {
-    console.log('Usage: node mini-wrekenfile-generator.js <wrekenfile-path> [output-dir]');
-    process.exit(1);
-  }
-  
-  const wrekenfilePath = args[0];
-  const outputDir = args[1] || './mini-wrekenfiles';
-  
-  try {
-    const miniFiles = generateMiniWrekenfiles(wrekenfilePath);
-    console.log(`Generated ${miniFiles.length} mini Wrekenfiles`);
-    
-    // Save to disk
-    saveMiniWrekenfiles(miniFiles, outputDir);
-    
-    // Print metadata
-    for (const miniFile of miniFiles) {
-      console.log(`\n${miniFile.metadata.filename}:`);
-      console.log(`  Endpoint: ${miniFile.metadata.endpoint}`);
-      console.log(`  Methods: ${miniFile.metadata.methods.join(', ')}`);
-      console.log(`  Structs: ${miniFile.metadata.structs.length}`);
-    }
-  } catch (error) {
-    console.error('Error:', error);
-    process.exit(1);
-  }
-} 
+// Only export the main functions at the end. 

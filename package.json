@@ -9,11 +9,6 @@
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
     "dev": "tsc --watch",
-    "convert": "node dist/openapi-to-wreken.js",
-    "convert-v2": "node dist/openapi-v2-to-wrekenfile.js",
-    "convert-postman": "node dist/postman-to-wrekenfile.js",
-    "validate": "node dist/wrekenfile-validator.js",
-    "mini": "node dist/mini-wrekenfile-generator.js",
     "example": "node dist/example-usage.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "prepublishOnly": "npm run build"

@@ -430,6 +430,12 @@ function extractOperations(collection: any, variables: Record<string, string>): 
 }
 
 function generateWrekenfile(collection: any, variables: Record<string, string>): string {
+  if (!collection || typeof collection !== 'object') {
+    throw new Error("Argument 'collection' is required and must be an object");
+  }
+  if (!variables || typeof variables !== 'object') {
+    throw new Error("Argument 'variables' is required and must be an object");
+  }
   const structs = extractStructs(collection, variables);
   const operations = extractOperations(collection, variables);
   
@@ -509,59 +515,6 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
   }
   
   return wrekenfile;
-}
-
-function main() {
-  const args = process.argv.slice(2);
-  
-  if (args.length === 0) {
-    console.error('Usage: node postman-to-wrekenfile.js <postman-collection.json> [environment.json]');
-    console.error('');
-    console.error('Arguments:');
-    console.error('  postman-collection.json  Path to the Postman collection file');
-    console.error('  environment.json         Optional: Path to the Postman environment file');
-    process.exit(1);
-  }
-  
-  const inputFile = args[0];
-  const envFile = args[1]; // Optional environment file
-  const outputFile = './Wrekenfile.yaml';
-  
-  try {
-    // Read and parse the Postman collection
-    const collectionData = fs.readFileSync(inputFile, 'utf8');
-    const collection = JSON.parse(collectionData);
-    
-    // Load environment variables
-    let variables: Record<string, string> = {};
-    
-    // First, load collection variables
-    variables = { ...variables, ...extractCollectionVariables(collection) };
-    
-    // Then, load environment file if provided
-    if (envFile) {
-      const envVariables = loadEnvironmentFile(envFile);
-      variables = { ...variables, ...envVariables };
-    }
-    
-    // Generate Wrekenfile
-    const wrekenfile = generateWrekenfile(collection, variables);
-    
-    // Write to output file
-    fs.writeFileSync(outputFile, wrekenfile);
-    
-    console.log('✅ Wrekenfile generated at', outputFile);
-    if (Object.keys(variables).length > 0) {
-      console.log(`📝 Loaded ${Object.keys(variables).length} environment variables`);
-    }
-  } catch (error) {
-    console.error('❌ Error:', error);
-    process.exit(1);
-  }
-}
-
-if (require.main === module) {
-  main();
 }
 
 export {

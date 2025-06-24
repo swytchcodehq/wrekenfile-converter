@@ -1,4 +1,4 @@
-// Main entry point for the wrekenfile-converter package
+// Main entry point for the wrekenfile-converter library (no CLI)
 
 // Export main conversion functions
 export { generateWrekenfile } from './openapi-to-wreken';
