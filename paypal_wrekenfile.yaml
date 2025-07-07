@@ -1,0 +1,2196 @@
+VERSION: '1.2'
+INIT:
+  DEFAULTS:
+    - bearer_token: BEARER <ACCESS_TOKEN>
+    - w_base_url: https://api-m.sandbox.paypal.com
+INTERFACES:
+  invoices.create:
+    SUMMARY: Create draft invoice
+    DESCRIPTION: >-
+      Creates a draft invoice. To move the invoice from a draft to payable
+      state, you must <a href="#invoices_send">send the invoice</a>.<br/><br/>In
+      the JSON request body, include invoice details including merchant
+      information. The <code>invoice</code> object must include an
+      <code>items</code> array.<blockquote><strong>Note:</strong> The merchant
+      that you specify in an invoice must have a PayPal account in good
+      standing.</blockquote>.
+    DESC: Create draft invoice
+    ENDPOINT: https://api-m.sandbox.paypal.com/v2/invoicing/invoices
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: POST
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: JSON
+    INPUTS:
+      - name: body
+        type: STRUCT(invoice)
+        required: 'TRUE'
+    RETURNS:
+      - RETURNTYPE: STRUCT(invoice)
+        RETURNNAME: response
+        CODE: '201'
+      - RETURNTYPE: STRUCT(invoices.createResponse400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(error_403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(invoices.createResponse422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.list:
+    SUMMARY: List invoices
+    DESCRIPTION: >-
+      Lists invoices. To filter the invoices that appear in the response, you
+      can specify one or more optional query parameters.
+    DESC: List invoices
+    ENDPOINT: https://api-m.sandbox.paypal.com/v2/invoicing/invoices
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: GET
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: RAW
+    INPUTS:
+      - name: page
+        type: INT
+        required: 'FALSE'
+        location: QUERY
+      - name: page_size
+        type: INT
+        required: 'FALSE'
+        location: QUERY
+      - name: total_required
+        type: BOOL
+        required: 'FALSE'
+        location: QUERY
+      - name: fields
+        type: STRING
+        required: 'FALSE'
+        location: QUERY
+    RETURNS:
+      - RETURNTYPE: STRUCT(invoices)
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: STRUCT(invoices.listResponse400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(error_403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.send:
+    SUMMARY: Send invoice
+    DESCRIPTION: >-
+      Sends or schedules an invoice, by ID, to be sent to a customer. The action
+      depends on the invoice issue date:<ul><li>If the invoice issue date is
+      current or in the past, sends the invoice immediately.</li><li>If the
+      invoice issue date is in the future, schedules the invoice to be sent on
+      that date.</li></ul>To suppress the merchant's email notification, set the
+      `send_to_invoicer` body parameter to `false`. To send the invoice through
+      a share link and not through PayPal, set the
+      <code>send_to_recipient</code> parameter to <code>false</code> in the
+      <code>notification</code> object. The <code>send_to_recipient</code>
+      parameter does not apply to a future issue date because the invoice is
+      scheduled to be sent through PayPal on that
+      date.<blockquote><strong>Notes:</strong><ul><li>After you send an invoice,
+      resending it has no effect.</li><li>To send a notification for updates, <a
+      href="#invoices_update">update the invoice</a> and set the
+      <code>send_to_recipient</code> body parameter to
+      <code>true</code>.</li></ul></blockquote>
+    DESC: Send invoice
+    ENDPOINT: '`https://api-m.sandbox.paypal.com/v2/invoicing/invoices/{invoice_id}/send`'
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: POST
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: JSON
+    INPUTS:
+      - name: invoice_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+      - name: body
+        type: STRUCT(notification)
+        required: 'FALSE'
+    RETURNS:
+      - RETURNTYPE: STRUCT(link_description)
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: STRUCT(202-response)
+        RETURNNAME: response
+        CODE: '202'
+      - RETURNTYPE: STRUCT(error_400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(error_403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: STRUCT(error_422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.remind:
+    SUMMARY: Send invoice reminder
+    DESCRIPTION: >-
+      Sends a reminder to the payer about an invoice, by ID. In the JSON request
+      body, include a `notification` object that defines the subject of the
+      reminder and other details.
+    DESC: Send invoice reminder
+    ENDPOINT: >-
+      `https://api-m.sandbox.paypal.com/v2/invoicing/invoices/{invoice_id}/remind`
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: POST
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: JSON
+    INPUTS:
+      - name: invoice_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+      - name: body
+        type: STRUCT(notification)
+        required: 'FALSE'
+    RETURNS:
+      - RETURNTYPE: VOID
+        RETURNNAME: response
+        CODE: '204'
+      - RETURNTYPE: STRUCT(invoices.remindResponse400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(invoices.remindResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: STRUCT(invoices.remindResponse422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.cancel:
+    SUMMARY: Cancel sent invoice
+    DESCRIPTION: >-
+      Cancels a sent invoice, by ID, and, optionally, sends a notification about
+      the cancellation to the payer, merchant, and CC: emails.
+    DESC: Cancel sent invoice
+    ENDPOINT: >-
+      `https://api-m.sandbox.paypal.com/v2/invoicing/invoices/{invoice_id}/cancel`
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: POST
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: JSON
+    INPUTS:
+      - name: invoice_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+      - name: body
+        type: STRUCT(notification)
+        required: 'TRUE'
+    RETURNS:
+      - RETURNTYPE: VOID
+        RETURNNAME: response
+        CODE: '204'
+      - RETURNTYPE: STRUCT(invoices.cancelResponse400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(invoices.cancelResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: STRUCT(invoices.cancelResponse422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.payments:
+    SUMMARY: Record payment for invoice
+    DESCRIPTION: >-
+      Records a payment for the invoice. If no payment is due, the invoice is
+      marked as `PAID`. Otherwise, the invoice is marked as `PARTIALLY PAID`.
+    DESC: Record payment for invoice
+    ENDPOINT: >-
+      `https://api-m.sandbox.paypal.com/v2/invoicing/invoices/{invoice_id}/payments`
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: POST
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: JSON
+    INPUTS:
+      - name: invoice_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+      - name: body
+        type: STRUCT(payment_detail)
+        required: 'TRUE'
+    RETURNS:
+      - RETURNTYPE: STRUCT(payment_reference)
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: STRUCT(invoices.paymentsResponse400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(invoices.paymentsResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: STRUCT(invoices.paymentsResponse422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.payments-delete:
+    SUMMARY: Delete external payment
+    DESCRIPTION: Deletes an external payment, by invoice ID and transaction ID.
+    DESC: Delete external payment
+    ENDPOINT: >-
+      `https://api-m.sandbox.paypal.com/v2/invoicing/invoices/{invoice_id}/payments/{transaction_id}`
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: DELETE
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: RAW
+    INPUTS:
+      - name: invoice_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+      - name: transaction_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+    RETURNS:
+      - RETURNTYPE: VOID
+        RETURNNAME: response
+        CODE: '204'
+      - RETURNTYPE: STRUCT(invoices.payments-deleteResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: STRUCT(invoices.payments-deleteResponse422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.refunds:
+    SUMMARY: Record refund for invoice
+    DESCRIPTION: >-
+      Records a refund for the invoice. If all payments are refunded, the
+      invoice is marked as `REFUNDED`. Otherwise, the invoice is marked as
+      `PARTIALLY REFUNDED`.
+    DESC: Record refund for invoice
+    ENDPOINT: >-
+      `https://api-m.sandbox.paypal.com/v2/invoicing/invoices/{invoice_id}/refunds`
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: POST
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: JSON
+    INPUTS:
+      - name: invoice_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+      - name: body
+        type: STRUCT(refund_detail)
+        required: 'TRUE'
+    RETURNS:
+      - RETURNTYPE: STRUCT(refund_reference)
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: STRUCT(invoices.refundsResponse400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(invoices.refundsResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: STRUCT(invoices.refundsResponse422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.refunds-delete:
+    SUMMARY: Delete external refund
+    DESCRIPTION: Deletes an external refund, by invoice ID and transaction ID.
+    DESC: Delete external refund
+    ENDPOINT: >-
+      `https://api-m.sandbox.paypal.com/v2/invoicing/invoices/{invoice_id}/refunds/{transaction_id}`
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: DELETE
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: RAW
+    INPUTS:
+      - name: invoice_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+      - name: transaction_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+    RETURNS:
+      - RETURNTYPE: VOID
+        RETURNNAME: response
+        CODE: '204'
+      - RETURNTYPE: STRUCT(invoices.refunds-deleteResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.generate-qr-code:
+    SUMMARY: Generate QR code
+    DESCRIPTION: >-
+      Generates a QR code for an invoice, by ID. The QR code is a PNG image in
+      <a href="https://www.base64encode.org/">Base64-encoded</a> format that
+      corresponds to the invoice ID. You can generate a QR code for an invoice
+      and add it to a paper or PDF invoice. When customers use their mobile
+      devices to scan the QR code, they are redirected to the PayPal mobile
+      payment flow where they can view the invoice and pay online with PayPal or
+      a credit card. Before you get a QR code, you must <a
+      href="#invoices_create">create an invoice</a> and <a
+      href="#invoices_send">send an invoice</a> to move the invoice from a draft
+      to payable state. Do not include an email address if you do not want the
+      invoice emailed.
+    DESC: Generate QR code
+    ENDPOINT: >-
+      `https://api-m.sandbox.paypal.com/v2/invoicing/invoices/{invoice_id}/generate-qr-code`
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: POST
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: JSON
+    INPUTS:
+      - name: invoice_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+      - name: body
+        type: STRUCT(qr_config)
+        required: 'FALSE'
+    RETURNS:
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoicing.generate-next-invoice-number:
+    SUMMARY: Generate invoice number
+    DESCRIPTION: >-
+      Generates the next invoice number that is available to the merchant. The
+      next invoice number uses the prefix and suffix from the last invoice
+      number and increments the number by one. For example, the next invoice
+      number after `INVOICE-1234` is `INVOICE-1235`.
+    DESC: Generate invoice number
+    ENDPOINT: https://api-m.sandbox.paypal.com/v2/invoicing/generate-next-invoice-number
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: POST
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: RAW
+    INPUTS: []
+    RETURNS:
+      - RETURNTYPE: STRUCT(invoice_number)
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: STRUCT(error_403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.get:
+    SUMMARY: Show invoice details
+    DESCRIPTION: Shows details for an invoice, by ID.
+    DESC: Show invoice details
+    ENDPOINT: '`https://api-m.sandbox.paypal.com/v2/invoicing/invoices/{invoice_id}`'
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: GET
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: RAW
+    INPUTS:
+      - name: invoice_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+    RETURNS:
+      - RETURNTYPE: STRUCT(invoice)
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: STRUCT(error_400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(invoices.getResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: STRUCT(error_422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.update:
+    SUMMARY: Fully update invoice
+    DESCRIPTION: >-
+      Fully updates an invoice, by ID. In the JSON request body, include a
+      complete `invoice` object. This call does not support partial updates.
+    DESC: Fully update invoice
+    ENDPOINT: '`https://api-m.sandbox.paypal.com/v2/invoicing/invoices/{invoice_id}`'
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: PUT
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: JSON
+    INPUTS:
+      - name: invoice_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+      - name: send_to_recipient
+        type: BOOL
+        required: 'FALSE'
+        location: QUERY
+      - name: send_to_invoicer
+        type: BOOL
+        required: 'FALSE'
+        location: QUERY
+      - name: body
+        type: STRUCT(invoice)
+        required: 'TRUE'
+    RETURNS:
+      - RETURNTYPE: STRUCT(invoice)
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: STRUCT(invoices.updateResponse400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(invoices.updateResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: STRUCT(invoices.updateResponse422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.delete:
+    SUMMARY: Delete invoice
+    DESCRIPTION: >-
+      Deletes a draft or scheduled invoice, by ID. Deletes invoices in the draft
+      or scheduled state only. For invoices that have already been sent, you can
+      <a href="/docs/api/invoicing/v2/#invoices_cancel">cancel the invoice</a>.
+      After you delete a draft or scheduled invoice, you can no longer use it or
+      show its details. However, you can reuse its invoice number.
+    DESC: Delete invoice
+    ENDPOINT: '`https://api-m.sandbox.paypal.com/v2/invoicing/invoices/{invoice_id}`'
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: DELETE
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: RAW
+    INPUTS:
+      - name: invoice_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+    RETURNS:
+      - RETURNTYPE: VOID
+        RETURNNAME: response
+        CODE: '204'
+      - RETURNTYPE: STRUCT(error_400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(invoices.deleteResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  invoices.search-invoices:
+    SUMMARY: Search for invoices
+    DESCRIPTION: >-
+      Searches for and lists invoices that match search criteria. If you pass
+      multiple criteria, the response lists invoices that match all criteria.
+    DESC: Search for invoices
+    ENDPOINT: https://api-m.sandbox.paypal.com/v2/invoicing/search-invoices
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: POST
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: JSON
+    INPUTS:
+      - name: page
+        type: INT
+        required: 'FALSE'
+        location: QUERY
+      - name: page_size
+        type: INT
+        required: 'FALSE'
+        location: QUERY
+      - name: total_required
+        type: BOOL
+        required: 'FALSE'
+        location: QUERY
+      - name: body
+        type: STRUCT(search_data)
+        required: 'FALSE'
+    RETURNS:
+      - RETURNTYPE: STRUCT(invoices)
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: STRUCT(invoices.search-invoicesResponse400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(error_403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  templates.list:
+    SUMMARY: List templates
+    DESCRIPTION: >-
+      Lists merchant-created templates with associated details. The associated
+      details include the emails, addresses, and phone numbers from the user's
+      PayPal profile.<br/>The user can select which values to show in the
+      business information section of their template.
+    DESC: List templates
+    ENDPOINT: https://api-m.sandbox.paypal.com/v2/invoicing/templates
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: GET
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: RAW
+    INPUTS:
+      - name: fields
+        type: STRING
+        required: 'FALSE'
+        location: QUERY
+      - name: page
+        type: INT
+        required: 'FALSE'
+        location: QUERY
+      - name: page_size
+        type: INT
+        required: 'FALSE'
+        location: QUERY
+    RETURNS:
+      - RETURNTYPE: STRUCT(templates)
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: STRUCT(templates.listResponse400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(error_403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  templates.create:
+    SUMMARY: Create template
+    DESCRIPTION: >-
+      Creates an invoice template. You can use details from this template to
+      create an invoice. You can create up to 50
+      templates.<blockquote><strong>Note:</strong> Every merchant starts with
+      three PayPal system templates that are optimized for the unit type billed.
+      The template includes `Quantity`, `Hours`, and `Amount`.</blockquote>
+    DESC: Create template
+    ENDPOINT: https://api-m.sandbox.paypal.com/v2/invoicing/templates
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: POST
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: JSON
+    INPUTS:
+      - name: body
+        type: STRUCT(template)
+        required: 'TRUE'
+    RETURNS:
+      - RETURNTYPE: STRUCT(template)
+        RETURNNAME: response
+        CODE: '201'
+      - RETURNTYPE: STRUCT(templates.createResponse400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(templates.createResponse422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  templates.get:
+    SUMMARY: Show template details
+    DESCRIPTION: Shows details for a template, by ID.
+    DESC: Show template details
+    ENDPOINT: '`https://api-m.sandbox.paypal.com/v2/invoicing/templates/{template_id}`'
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: GET
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: RAW
+    INPUTS:
+      - name: template_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+    RETURNS:
+      - RETURNTYPE: STRUCT(template)
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: STRUCT(templates.getResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  templates.update:
+    SUMMARY: Fully update template
+    DESCRIPTION: >-
+      Fully updates a template, by ID. In the JSON request body, include a
+      complete `template` object. This call does not support partial updates.
+    DESC: Fully update template
+    ENDPOINT: '`https://api-m.sandbox.paypal.com/v2/invoicing/templates/{template_id}`'
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: PUT
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: JSON
+    INPUTS:
+      - name: template_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+      - name: body
+        type: STRUCT(template)
+        required: 'TRUE'
+    RETURNS:
+      - RETURNTYPE: STRUCT(template)
+        RETURNNAME: response
+        CODE: '200'
+      - RETURNTYPE: STRUCT(templates.updateResponse400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(templates.updateResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: STRUCT(templates.updateResponse422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+  templates.delete:
+    SUMMARY: Delete template
+    DESCRIPTION: Deletes a template, by ID.
+    DESC: Delete template
+    ENDPOINT: '`https://api-m.sandbox.paypal.com/v2/invoicing/templates/{template_id}`'
+    VISIBILITY: PUBLIC
+    HTTP:
+      METHOD: DELETE
+      HEADERS:
+        - Content-Type: application/json
+        - Authorization: bearer_token
+      BODYTYPE: RAW
+    INPUTS:
+      - name: template_id
+        type: STRING
+        required: 'TRUE'
+        location: PATH
+    RETURNS:
+      - RETURNTYPE: VOID
+        RETURNNAME: response
+        CODE: '204'
+      - RETURNTYPE: STRUCT(error_400)
+        RETURNNAME: response
+        CODE: '400'
+      - RETURNTYPE: STRUCT(templates.deleteResponse403)
+        RETURNNAME: response
+        CODE: '403'
+      - RETURNTYPE: STRUCT(error_404)
+        RETURNNAME: response
+        CODE: '404'
+      - RETURNTYPE: STRUCT(error_422)
+        RETURNNAME: response
+        CODE: '422'
+      - RETURNTYPE: ANY
+        RETURNNAME: response
+        CODE: '500'
+STRUCTS:
+  '400': []
+  '403': []
+  '422': []
+  error_details:
+    - name: field
+      type: STRING
+      required: 'FALSE'
+    - name: value
+      type: STRING
+      required: 'FALSE'
+    - name: location
+      type: STRING
+      required: 'FALSE'
+    - name: issue
+      type: STRING
+      required: 'TRUE'
+    - name: description
+      type: STRING
+      required: 'FALSE'
+  error_default:
+    - name: variant
+      type: STRUCT(error_default_Union)
+      required: 'FALSE'
+  error_400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  error_link_description:
+    - name: href
+      type: STRING
+      required: 'TRUE'
+    - name: rel
+      type: STRING
+      required: 'TRUE'
+    - name: method
+      type: STRING
+      required: 'FALSE'
+  error_401:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  error_403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  error_404:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  error_409:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  error_415:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  error_422:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  error_500:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  error_503:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  error_default_Union:
+    - name: value
+      type: ANY
+      required: 'FALSE'
+  invoice_status: []
+  currency_code: []
+  date_time: []
+  file_reference:
+    - name: id
+      type: STRING
+      required: 'FALSE'
+    - name: reference_url
+      type: STRING
+      required: 'FALSE'
+    - name: content_type
+      type: STRING
+      required: 'FALSE'
+    - name: create_time
+      type: STRING
+      required: 'FALSE'
+    - name: size
+      type: STRING
+      required: 'FALSE'
+  detail: []
+  date_no_time: []
+  payment_term_type: []
+  payment_term:
+    - name: term_type
+      type: STRING
+      required: 'FALSE'
+  invoice_payment_term:
+    - name: term_type
+      type: STRING
+      required: 'FALSE'
+  invoice_payment_term_allOf: []
+  template_metadata:
+    - name: create_time
+      type: STRING
+      required: 'FALSE'
+    - name: created_by
+      type: STRING
+      required: 'FALSE'
+    - name: last_update_time
+      type: STRING
+      required: 'FALSE'
+    - name: last_updated_by
+      type: STRING
+      required: 'FALSE'
+  invoice_creation_flow: []
+  metadata:
+    - name: create_time
+      type: STRING
+      required: 'FALSE'
+    - name: created_by
+      type: STRING
+      required: 'FALSE'
+    - name: last_update_time
+      type: STRING
+      required: 'FALSE'
+    - name: last_updated_by
+      type: STRING
+      required: 'FALSE'
+  metadata_allOf: []
+  invoice_detail: []
+  invoice_detail_allOf: []
+  business_name:
+    - name: business_name
+      type: STRING
+      required: 'FALSE'
+  name:
+    - name: prefix
+      type: STRING
+      required: 'FALSE'
+    - name: given_name
+      type: STRING
+      required: 'FALSE'
+    - name: surname
+      type: STRING
+      required: 'FALSE'
+    - name: middle_name
+      type: STRING
+      required: 'FALSE'
+    - name: suffix
+      type: STRING
+      required: 'FALSE'
+    - name: alternate_full_name
+      type: STRING
+      required: 'FALSE'
+    - name: full_name
+      type: STRING
+      required: 'FALSE'
+  country_code: []
+  address_portable:
+    - name: address_line_1
+      type: STRING
+      required: 'FALSE'
+    - name: address_line_2
+      type: STRING
+      required: 'FALSE'
+    - name: address_line_3
+      type: STRING
+      required: 'FALSE'
+    - name: admin_area_4
+      type: STRING
+      required: 'FALSE'
+    - name: admin_area_3
+      type: STRING
+      required: 'FALSE'
+    - name: admin_area_2
+      type: STRING
+      required: 'FALSE'
+    - name: admin_area_1
+      type: STRING
+      required: 'FALSE'
+    - name: postal_code
+      type: STRING
+      required: 'FALSE'
+    - name: country_code
+      type: STRING
+      required: 'TRUE'
+    - name: address_details
+      type: ANY
+      required: 'FALSE'
+  address_portable_address_details:
+    - name: street_number
+      type: STRING
+      required: 'FALSE'
+    - name: street_name
+      type: STRING
+      required: 'FALSE'
+    - name: street_type
+      type: STRING
+      required: 'FALSE'
+    - name: delivery_service
+      type: STRING
+      required: 'FALSE'
+    - name: building_name
+      type: STRING
+      required: 'FALSE'
+    - name: sub_building
+      type: STRING
+      required: 'FALSE'
+  contact_name_address:
+    - name: business_name
+      type: STRING
+      required: 'FALSE'
+  contact_name_address_allOf: []
+  email_address: []
+  phone:
+    - name: country_code
+      type: STRING
+      required: 'TRUE'
+    - name: national_number
+      type: STRING
+      required: 'TRUE'
+    - name: extension_number
+      type: STRING
+      required: 'FALSE'
+  phone_type: []
+  phone_detail:
+    - name: country_code
+      type: STRING
+      required: 'TRUE'
+    - name: national_number
+      type: STRING
+      required: 'TRUE'
+    - name: extension_number
+      type: STRING
+      required: 'FALSE'
+  phone_detail_allOf: []
+  invoicer_info: []
+  invoicer_info_allOf: []
+  language: []
+  billing_info: []
+  billing_info_allOf: []
+  recipient_info:
+    - name: billing_info
+      type: STRUCT(billing_info)
+      required: 'FALSE'
+    - name: shipping_info
+      type: STRUCT(contact_name_address)
+      required: 'FALSE'
+  money:
+    - name: currency_code
+      type: STRING
+      required: 'TRUE'
+    - name: value
+      type: STRING
+      required: 'TRUE'
+  percentage: []
+  tax:
+    - name: name
+      type: STRING
+      required: 'TRUE'
+    - name: percent
+      type: STRING
+      required: 'TRUE'
+    - name: amount
+      type: STRUCT(money)
+      required: 'FALSE'
+  discount:
+    - name: percent
+      type: STRING
+      required: 'FALSE'
+    - name: amount
+      type: STRUCT(money)
+      required: 'FALSE'
+  unit_of_measure: []
+  item:
+    - name: id
+      type: STRING
+      required: 'FALSE'
+    - name: name
+      type: STRING
+      required: 'TRUE'
+    - name: description
+      type: STRING
+      required: 'FALSE'
+    - name: quantity
+      type: STRING
+      required: 'TRUE'
+    - name: unit_amount
+      type: STRUCT(money)
+      required: 'TRUE'
+    - name: tax
+      type: STRUCT(tax)
+      required: 'FALSE'
+    - name: item_date
+      type: STRING
+      required: 'FALSE'
+    - name: discount
+      type: STRUCT(discount)
+      required: 'FALSE'
+    - name: unit_of_measure
+      type: STRING
+      required: 'FALSE'
+  partial_payment:
+    - name: allow_partial_payment
+      type: BOOL
+      required: 'FALSE'
+    - name: minimum_amount_due
+      type: STRUCT(money)
+      required: 'FALSE'
+  template_configuration:
+    - name: tax_calculated_after_discount
+      type: BOOL
+      required: 'FALSE'
+    - name: tax_inclusive
+      type: BOOL
+      required: 'FALSE'
+    - name: allow_tip
+      type: BOOL
+      required: 'FALSE'
+    - name: partial_payment
+      type: STRUCT(partial_payment)
+      required: 'FALSE'
+  configuration:
+    - name: tax_calculated_after_discount
+      type: BOOL
+      required: 'FALSE'
+    - name: tax_inclusive
+      type: BOOL
+      required: 'FALSE'
+    - name: allow_tip
+      type: BOOL
+      required: 'FALSE'
+    - name: partial_payment
+      type: STRUCT(partial_payment)
+      required: 'FALSE'
+  configuration_allOf: []
+  aggregated_discount:
+    - name: invoice_discount
+      type: STRUCT(discount)
+      required: 'FALSE'
+    - name: item_discount
+      type: STRUCT(money)
+      required: 'FALSE'
+  shipping_cost:
+    - name: amount
+      type: STRUCT(money)
+      required: 'FALSE'
+    - name: tax
+      type: STRUCT(tax)
+      required: 'FALSE'
+  custom_amount:
+    - name: label
+      type: STRING
+      required: 'TRUE'
+    - name: amount
+      type: STRUCT(money)
+      required: 'FALSE'
+  amount_with_breakdown:
+    - name: item_total
+      type: STRUCT(money)
+      required: 'FALSE'
+    - name: discount
+      type: STRUCT(aggregated_discount)
+      required: 'FALSE'
+    - name: tax_total
+      type: STRUCT(money)
+      required: 'FALSE'
+    - name: shipping
+      type: STRUCT(shipping_cost)
+      required: 'FALSE'
+    - name: custom
+      type: STRUCT(custom_amount)
+      required: 'FALSE'
+  amount_summary_detail:
+    - name: currency_code
+      type: STRING
+      required: 'FALSE'
+    - name: value
+      type: STRING
+      required: 'FALSE'
+    - name: breakdown
+      type: STRUCT(amount_with_breakdown)
+      required: 'FALSE'
+  payment_type: []
+  payment_method: []
+  payment_detail:
+    - name: type
+      type: STRING
+      required: 'FALSE'
+    - name: payment_id
+      type: STRING
+      required: 'FALSE'
+    - name: payment_date
+      type: STRING
+      required: 'FALSE'
+    - name: method
+      type: STRING
+      required: 'TRUE'
+    - name: note
+      type: STRING
+      required: 'FALSE'
+    - name: amount
+      type: STRUCT(money)
+      required: 'FALSE'
+    - name: shipping_info
+      type: STRUCT(contact_name_address)
+      required: 'FALSE'
+  payments:
+    - name: paid_amount
+      type: STRUCT(money)
+      required: 'FALSE'
+    - name: transactions
+      type: '[]STRUCT(payment_detail)'
+      required: 'FALSE'
+  refund_detail:
+    - name: type
+      type: STRING
+      required: 'FALSE'
+    - name: refund_id
+      type: STRING
+      required: 'FALSE'
+    - name: refund_date
+      type: STRING
+      required: 'FALSE'
+    - name: amount
+      type: STRUCT(money)
+      required: 'FALSE'
+    - name: method
+      type: STRING
+      required: 'TRUE'
+  refunds:
+    - name: refund_amount
+      type: STRUCT(money)
+      required: 'FALSE'
+    - name: transactions
+      type: '[]STRUCT(refund_detail)'
+      required: 'FALSE'
+  link_description:
+    - name: href
+      type: STRING
+      required: 'TRUE'
+    - name: rel
+      type: STRING
+      required: 'TRUE'
+    - name: method
+      type: STRING
+      required: 'FALSE'
+  invoice:
+    - name: id
+      type: STRING
+      required: 'FALSE'
+    - name: parent_id
+      type: STRING
+      required: 'FALSE'
+    - name: status
+      type: STRING
+      required: 'FALSE'
+    - name: detail
+      type: STRUCT(invoice_detail)
+      required: 'TRUE'
+    - name: invoicer
+      type: STRUCT(invoicer_info)
+      required: 'FALSE'
+    - name: primary_recipients
+      type: '[]STRUCT(recipient_info)'
+      required: 'FALSE'
+    - name: additional_recipients
+      type: '[]STRING'
+      required: 'FALSE'
+    - name: items
+      type: '[]STRUCT(item)'
+      required: 'FALSE'
+    - name: configuration
+      type: STRUCT(configuration)
+      required: 'FALSE'
+    - name: amount
+      type: STRUCT(amount_summary_detail)
+      required: 'FALSE'
+    - name: due_amount
+      type: STRUCT(money)
+      required: 'FALSE'
+    - name: gratuity
+      type: STRUCT(money)
+      required: 'FALSE'
+    - name: payments
+      type: STRUCT(payments)
+      required: 'FALSE'
+    - name: refunds
+      type: STRUCT(refunds)
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(link_description)'
+      required: 'FALSE'
+  invoices:
+    - name: total_pages
+      type: INT
+      required: 'FALSE'
+    - name: total_items
+      type: INT
+      required: 'FALSE'
+    - name: items
+      type: '[]STRUCT(invoice)'
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(link_description)'
+      required: 'FALSE'
+  invoices.create-400: []
+  notification:
+    - name: subject
+      type: STRING
+      required: 'FALSE'
+    - name: note
+      type: STRING
+      required: 'FALSE'
+    - name: send_to_invoicer
+      type: BOOL
+      required: 'FALSE'
+    - name: send_to_recipient
+      type: BOOL
+      required: 'FALSE'
+    - name: additional_recipients
+      type: '[]STRING'
+      required: 'FALSE'
+  202-response:
+    - name: links
+      type: '[]STRUCT(link_description)'
+      required: 'FALSE'
+  invoices.remind-400: []
+  invoices.remind-422: []
+  invoices.cancel-400: []
+  invoices.cancel-422: []
+  payment_reference:
+    - name: payment_id
+      type: STRING
+      required: 'FALSE'
+  invoices.payments-400: []
+  invoices.payments-422: []
+  invoices.payments-delete-422: []
+  refund_reference:
+    - name: refund_id
+      type: STRING
+      required: 'FALSE'
+  invoices.refunds-400: []
+  invoices.refunds-422: []
+  qr_config:
+    - name: width
+      type: INT
+      required: 'FALSE'
+    - name: height
+      type: INT
+      required: 'FALSE'
+    - name: action
+      type: STRING
+      required: 'FALSE'
+  invoices.generate-qr-code-400: []
+  invoice_number:
+    - name: invoice_number
+      type: STRING
+      required: 'FALSE'
+  invoices.update-400: []
+  amount_range:
+    - name: lower_amount
+      type: STRUCT(money)
+      required: 'TRUE'
+    - name: upper_amount
+      type: STRUCT(money)
+      required: 'TRUE'
+  date_range:
+    - name: start
+      type: STRING
+      required: 'TRUE'
+    - name: end
+      type: STRING
+      required: 'TRUE'
+  date_time_range:
+    - name: start
+      type: STRING
+      required: 'TRUE'
+    - name: end
+      type: STRING
+      required: 'TRUE'
+  search_data:
+    - name: recipient_email
+      type: STRING
+      required: 'FALSE'
+    - name: recipient_first_name
+      type: STRING
+      required: 'FALSE'
+    - name: recipient_last_name
+      type: STRING
+      required: 'FALSE'
+    - name: recipient_business_name
+      type: STRING
+      required: 'FALSE'
+    - name: invoice_number
+      type: STRING
+      required: 'FALSE'
+    - name: status
+      type: '[]STRING'
+      required: 'FALSE'
+    - name: reference
+      type: STRING
+      required: 'FALSE'
+    - name: currency_code
+      type: STRING
+      required: 'FALSE'
+    - name: memo
+      type: STRING
+      required: 'FALSE'
+    - name: total_amount_range
+      type: STRUCT(amount_range)
+      required: 'FALSE'
+    - name: invoice_date_range
+      type: STRUCT(date_range)
+      required: 'FALSE'
+    - name: due_date_range
+      type: STRUCT(date_range)
+      required: 'FALSE'
+    - name: payment_date_range
+      type: STRUCT(date_time_range)
+      required: 'FALSE'
+    - name: creation_date_range
+      type: STRUCT(date_time_range)
+      required: 'FALSE'
+    - name: archived
+      type: BOOL
+      required: 'FALSE'
+    - name: fields
+      type: '[]STRING'
+      required: 'FALSE'
+  invoices.search-invoices-400: []
+  template_detail: []
+  template_detail_allOf: []
+  template_info:
+    - name: detail
+      type: STRUCT(template_detail)
+      required: 'FALSE'
+    - name: invoicer
+      type: STRUCT(invoicer_info)
+      required: 'FALSE'
+    - name: primary_recipients
+      type: '[]STRUCT(recipient_info)'
+      required: 'FALSE'
+    - name: additional_recipients
+      type: '[]STRING'
+      required: 'FALSE'
+    - name: items
+      type: '[]STRUCT(item)'
+      required: 'FALSE'
+    - name: configuration
+      type: STRUCT(template_configuration)
+      required: 'FALSE'
+    - name: amount
+      type: STRUCT(amount_summary_detail)
+      required: 'FALSE'
+    - name: due_amount
+      type: STRUCT(money)
+      required: 'FALSE'
+  template_item_field: []
+  template_display_preference:
+    - name: hidden
+      type: BOOL
+      required: 'FALSE'
+  template_item_setting:
+    - name: field_name
+      type: STRING
+      required: 'FALSE'
+    - name: display_preference
+      type: STRUCT(template_display_preference)
+      required: 'FALSE'
+  template_subtotal_field: []
+  template_subtotal_setting:
+    - name: field_name
+      type: STRING
+      required: 'FALSE'
+    - name: display_preference
+      type: STRUCT(template_display_preference)
+      required: 'FALSE'
+  template_settings:
+    - name: template_item_settings
+      type: '[]STRUCT(template_item_setting)'
+      required: 'FALSE'
+    - name: template_subtotal_settings
+      type: '[]STRUCT(template_subtotal_setting)'
+      required: 'FALSE'
+  template:
+    - name: id
+      type: STRING
+      required: 'FALSE'
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: default_template
+      type: BOOL
+      required: 'FALSE'
+    - name: template_info
+      type: STRUCT(template_info)
+      required: 'FALSE'
+    - name: settings
+      type: STRUCT(template_settings)
+      required: 'FALSE'
+    - name: unit_of_measure
+      type: STRING
+      required: 'FALSE'
+    - name: standard_template
+      type: BOOL
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(link_description)'
+      required: 'FALSE'
+  templates:
+    - name: addresses
+      type: '[]STRUCT(address_portable)'
+      required: 'FALSE'
+    - name: emails
+      type: STRING
+      required: 'FALSE'
+    - name: phones
+      type: '[]STRUCT(phone_detail)'
+      required: 'FALSE'
+    - name: templates
+      type: '[]STRUCT(template)'
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(link_description)'
+      required: 'FALSE'
+  templates.create-400: []
+  templates.create-422: []
+  templates.get-403: []
+  templates.update-400: []
+  templates.update-422: []
+  templates.delete-403: []
+  invoices.createResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.createResponse422:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.listResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.remindResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.remindResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.remindResponse422:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.cancelResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.cancelResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.cancelResponse422:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.paymentsResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.paymentsResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.paymentsResponse422:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.payments-deleteResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.payments-deleteResponse422:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.refundsResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.refundsResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.refundsResponse422:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.refunds-deleteResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.generate-qr-codeResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.generate-qr-codeResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.getResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.updateResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.updateResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.updateResponse422:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.deleteResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  invoices.search-invoicesResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  templates.listResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  templates.createResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  templates.createResponse422:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  templates.getResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  templates.updateResponse400:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  templates.updateResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  templates.updateResponse422:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'
+  templates.deleteResponse403:
+    - name: name
+      type: STRING
+      required: 'FALSE'
+    - name: message
+      type: STRING
+      required: 'FALSE'
+    - name: details
+      type: '[]STRUCT(error_details)'
+      required: 'FALSE'
+    - name: debug_id
+      type: STRING
+      required: 'FALSE'
+    - name: links
+      type: '[]STRUCT(error_link_description)'
+      required: 'FALSE'

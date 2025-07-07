@@ -138,12 +138,59 @@ function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
   const structs: Record<string, any[]> = {};
   const schemas = spec.components?.schemas || {};
   
+  // Helper to recursively collect all referenced schemas, traversing all properties, arrays, and combiners
+  function collectAllReferencedSchemas(schema: any, name: string) {
+    if (!name || structs[name]) return;
+    const resolved = schema.$ref ? resolveRef(schema.$ref, spec, baseDir) : schema;
+    const fields = parseSchema(name, resolved, spec, baseDir);
+    structs[name] = fields;
+
+    // Traverse all properties
+    if (resolved.type === 'object' && resolved.properties) {
+      for (const [propName, prop] of Object.entries<any>(resolved.properties)) {
+        if (prop.$ref) {
+          const refName = prop.$ref.split('/').pop();
+          if (refName) collectAllReferencedSchemas(resolveRef(prop.$ref, spec, baseDir), refName);
+        } else if (prop.type === 'array' && prop.items) {
+          if (prop.items.$ref) {
+            const refName = prop.items.$ref.split('/').pop();
+            if (refName) collectAllReferencedSchemas(resolveRef(prop.items.$ref, spec, baseDir), refName);
+          } else if (prop.items.type === 'object' || prop.items.properties || prop.items.allOf || prop.items.oneOf || prop.items.anyOf) {
+            collectAllReferencedSchemas(prop.items, name + '_' + propName + '_Item');
+          }
+        } else if (prop.type === 'object' || prop.properties || prop.allOf || prop.oneOf || prop.anyOf) {
+          collectAllReferencedSchemas(prop, name + '_' + propName);
+        }
+      }
+    }
+    // Traverse array items at root
+    if (resolved.type === 'array' && resolved.items) {
+      if (resolved.items.$ref) {
+        const refName = resolved.items.$ref.split('/').pop();
+        if (refName) collectAllReferencedSchemas(resolveRef(resolved.items.$ref, spec, baseDir), refName);
+      } else if (resolved.items.type === 'object' || resolved.items.properties || resolved.items.allOf || resolved.items.oneOf || resolved.items.anyOf) {
+        collectAllReferencedSchemas(resolved.items, name + '_Item');
+      }
+    }
+    // Traverse allOf/oneOf/anyOf
+    for (const combiner of ['allOf', 'oneOf', 'anyOf']) {
+      if (Array.isArray(resolved[combiner])) {
+        for (const subSchema of resolved[combiner]) {
+          if (subSchema.$ref) {
+            const refName = subSchema.$ref.split('/').pop();
+            if (refName) collectAllReferencedSchemas(resolveRef(subSchema.$ref, spec, baseDir), refName);
+          } else {
+            collectAllReferencedSchemas(subSchema, name + '_' + combiner);
+          }
+        }
+      }
+    }
+  }
+
   // Extract schemas from components
   for (const name in schemas) {
+    collectAllReferencedSchemas(schemas[name], name);
     const schema = schemas[name];
-    const fields = parseSchema(name, schema, spec, baseDir);
-    // Always add the struct, even if empty
-    structs[name] = fields;
     if (schema.oneOf || schema.anyOf) {
       structs[`${name}_Union`] = [{ name: 'value', type: 'ANY', required: 'FALSE' }];
     }
@@ -157,12 +204,13 @@ function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
       // Extract request body schemas
       if (op.requestBody?.content) {
         for (const [contentType, content] of Object.entries<any>(op.requestBody.content)) {
-          if (content.schema && !content.schema.$ref) {
-            // Inline schema - create a struct for it
-            const requestStructName = generateStructName(operationId, method, pathStr, 'Request');
-            const fields = parseSchema(requestStructName, content.schema, spec, baseDir);
-            if (fields.length > 0) {
-              structs[requestStructName] = fields;
+          if (content.schema) {
+            if (content.schema.$ref) {
+              const refName = content.schema.$ref.split('/').pop();
+              if (refName) collectAllReferencedSchemas(resolveRef(content.schema.$ref, spec, baseDir), refName);
+            } else {
+              const requestStructName = generateStructName(operationId, method, pathStr, 'Request');
+              collectAllReferencedSchemas(content.schema, requestStructName);
             }
           }
         }
@@ -173,12 +221,13 @@ function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
         for (const [code, response] of Object.entries<any>(op.responses)) {
           if (response.content) {
             for (const [contentType, content] of Object.entries<any>(response.content)) {
-              if (content.schema && !content.schema.$ref) {
-                // Inline schema - create a struct for it
-                const responseStructName = generateStructName(operationId, method, pathStr, `Response${code}`);
-                const fields = parseSchema(responseStructName, content.schema, spec, baseDir);
-                if (fields.length > 0) {
-                  structs[responseStructName] = fields;
+              if (content.schema) {
+                if (content.schema.$ref) {
+                  const refName = content.schema.$ref.split('/').pop();
+                  if (refName) collectAllReferencedSchemas(resolveRef(content.schema.$ref, spec, baseDir), refName);
+                } else {
+                  const responseStructName = generateStructName(operationId, method, pathStr, `Response${code}`);
+                  collectAllReferencedSchemas(content.schema, responseStructName);
                 }
               }
             }
@@ -415,6 +464,8 @@ function extractInterfaces(spec: any, baseDir: string): Record<string, any> {
       const returns = extractResponses(op, operationId, method, pathStr, spec, baseDir);
 
       interfaces[alias] = {
+        SUMMARY: op.summary || '',
+        DESCRIPTION: op.description || '',
         DESC: generateDesc(op, method, pathStr),
         ENDPOINT: endpoint,
         VISIBILITY: visibility,

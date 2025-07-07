@@ -391,6 +391,8 @@ function extractInterfaces(spec: any): Record<string, any> {
       const returns = extractResponses(op, operationId, method, pathStr);
 
       interfaces[alias] = {
+        SUMMARY: op.summary || '',
+        DESCRIPTION: op.description || '',
         DESC: generateDesc(op, method, pathStr),
         ENDPOINT: endpoint,
         VISIBILITY: visibility,
@@ -449,22 +451,6 @@ function generateWrekenfile(spec: any, baseDir: string): string {
     INTERFACES: extractInterfaces(spec),
     STRUCTS: extractStructs(spec, baseDir),
   }, { noArrayIndent: true });
-}
-
-// MAIN
-if (require.main === module) {
-  const inputFile = process.argv[2];
-  if (!inputFile) {
-    console.error('❌ Please provide a path to an OpenAPI v2 file.');
-    process.exit(1);
-  }
-  const baseDir = path.dirname(inputFile);
-  const openapi = load(fs.readFileSync(inputFile, 'utf8'));
-  // Attach the base directory to the spec object for later use in resolving $refs
-  (openapi as any).swaggerFile = inputFile;
-  const output = generateWrekenfile(openapi, baseDir);
-  fs.writeFileSync('./Wrekenfile.yaml', output);
-  console.log('✅ Wrekenfile generated at ./Wrekenfile.yaml');
 }
 
 // Export for programmatic use

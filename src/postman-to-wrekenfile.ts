@@ -400,6 +400,8 @@ function extractOperations(collection: any, variables: Record<string, string>): 
       
       operations.push({
         name: operationId,
+        SUMMARY: itemName || '',
+        DESCRIPTION: item.description ? item.description.replace(/<[^>]*>/g, '').replace(/\n+/g, ' ').trim() : '',
         DESC: generateDesc(item, method, path),
         ENDPOINT: `"/${path}"`,
         VISIBILITY: 'PUBLIC',
@@ -464,6 +466,8 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
   wrekenfile += `INTERFACES:\n`;
   for (const operation of operations) {
     wrekenfile += `  ${operation.name}:\n`;
+    wrekenfile += `    SUMMARY: ${operation.SUMMARY}\n`;
+    wrekenfile += `    DESCRIPTION: ${operation.DESCRIPTION}\n`;
     wrekenfile += `    DESC: ${operation.DESC}\n`;
     wrekenfile += `    ENDPOINT: ${operation.ENDPOINT}\n`;
     wrekenfile += `    VISIBILITY: ${operation.VISIBILITY}\n`;

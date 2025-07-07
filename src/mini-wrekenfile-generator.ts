@@ -61,16 +61,21 @@ function groupInterfacesByEndpoint(interfaces: Record<string, any>): Record<stri
   const groups: Record<string, Record<string, any>> = {};
   
   for (const [interfaceName, interfaceData] of Object.entries(interfaces)) {
-    const endpoint = interfaceData.ENDPOINT;
+    let endpoint = interfaceData.ENDPOINT;
     if (!endpoint) {
       console.warn(`Interface ${interfaceName} has no ENDPOINT, skipping`);
       continue;
     }
-    
+    // Normalize endpoint: remove backticks and trim whitespace
+    if (typeof endpoint === 'string') {
+      endpoint = endpoint.trim();
+      if (endpoint.startsWith('`') && endpoint.endsWith('`')) {
+        endpoint = endpoint.slice(1, -1).trim();
+      }
+    }
     if (!groups[endpoint]) {
       groups[endpoint] = {};
     }
-    
     groups[endpoint][interfaceName] = interfaceData;
   }
   
@@ -136,9 +141,11 @@ function collectRequiredStructs(
     // Check INPUTS
     if (interfaceData.INPUTS) {
       for (const input of interfaceData.INPUTS) {
-        if (input.type && input.type.startsWith('STRUCT(')) {
-          const structName = extractStructName(input.type);
-          if (structName) structRefs.add(structName);
+        if (input.type) {
+          const structNames = extractAllStructNames(input.type);
+          for (const structName of structNames) {
+            if (structName) structRefs.add(structName);
+          }
         }
       }
     }
@@ -146,9 +153,11 @@ function collectRequiredStructs(
     // Check RETURNS
     if (interfaceData.RETURNS) {
       for (const ret of interfaceData.RETURNS) {
-        if (ret.RETURNTYPE && ret.RETURNTYPE.startsWith('STRUCT(')) {
-          const structName = extractStructName(ret.RETURNTYPE);
-          if (structName) structRefs.add(structName);
+        if (ret.RETURNTYPE) {
+          const structNames = extractAllStructNames(ret.RETURNTYPE);
+          for (const structName of structNames) {
+            if (structName) structRefs.add(structName);
+          }
         }
       }
     }
@@ -189,10 +198,13 @@ function collectStructRecursively(
   const structFields = allStructs[structName];
   if (Array.isArray(structFields)) {
     for (const field of structFields) {
-      if (field.type && field.type.startsWith('STRUCT(')) {
-        const nestedStructName = extractStructName(field.type);
-        if (nestedStructName) {
-          collectStructRecursively(nestedStructName, allStructs, requiredStructs, processedStructs);
+      if (field.type) {
+        // Handle STRUCT(SomeStruct) and []STRUCT(SomeStruct)
+        const nestedStructNames = extractAllStructNames(field.type);
+        for (const nestedStructName of nestedStructNames) {
+          if (nestedStructName) {
+            collectStructRecursively(nestedStructName, allStructs, requiredStructs, processedStructs);
+          }
         }
       }
     }
@@ -200,10 +212,24 @@ function collectStructRecursively(
 }
 
 /**
+ * Extracts all struct names from a type string, e.g. STRUCT(SomeStruct), []STRUCT(SomeStruct)
+ */
+function extractAllStructNames(typeString: string): string[] {
+  const matches = [];
+  // Match STRUCT(SomeStruct)
+  const match1 = typeString.match(/^STRUCT\(([^)]+)\)/);
+  if (match1) matches.push(match1[1]);
+  // Match []STRUCT(SomeStruct)
+  const match2 = typeString.match(/^\[\]STRUCT\(([^)]+)\)/);
+  if (match2) matches.push(match2[1]);
+  return matches;
+}
+
+/**
  * Extracts struct name from STRUCT(name) format
  */
 function extractStructName(typeString: string): string | null {
-  const match = typeString.match(/^STRUCT\(([^)]+)\)/);
+  const match = typeString.match(/^STRUCT\(([^)]+)\)/) || typeString.match(/^\[\]STRUCT\(([^)]+)\)/);
   return match ? match[1] : null;
 }
 
