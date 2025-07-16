@@ -6,15 +6,28 @@ import { load, dump } from 'js-yaml';
 type Primitive = 'STRING' | 'INT' | 'FLOAT' | 'BOOL' | 'TIMESTAMP' | 'DATE' | 'ANY' | 'UUID';
 const externalRefCache: Record<string, any> = {};
 
-function mapType(type: string, format?: string): Primitive {
+function mapType(type: any, format?: string): Primitive {
   if (format === 'uuid') return 'UUID';
   if (format === 'date-time') return 'TIMESTAMP';
   if (format === 'binary') return 'STRING'; // File uploads
-  const t = type?.toLowerCase();
-  if (t === 'string') return 'STRING';
-  if (t === 'integer' || t === 'int') return 'INT';
-  if (t === 'number') return 'FLOAT';
-  if (t === 'boolean') return 'BOOL';
+  if (typeof type === 'string') {
+    const t = type.toLowerCase();
+    if (t === 'string') return 'STRING';
+    if (t === 'integer' || t === 'int') return 'INT';
+    if (t === 'number') return 'FLOAT';
+    if (t === 'boolean') return 'BOOL';
+    return 'ANY';
+  }
+  // Handle array of types (OpenAPI allows type: ['string', 'null'])
+  if (Array.isArray(type) && type.length > 0 && typeof type[0] === 'string') {
+    const t = type[0].toLowerCase();
+    if (t === 'string') return 'STRING';
+    if (t === 'integer' || t === 'int') return 'INT';
+    if (t === 'number') return 'FLOAT';
+    if (t === 'boolean') return 'BOOL';
+    return 'ANY';
+  }
+  // Fallback for missing or unexpected type
   return 'ANY';
 }
 
