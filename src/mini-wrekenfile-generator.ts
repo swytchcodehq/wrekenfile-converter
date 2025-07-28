@@ -144,7 +144,7 @@ function collectRequiredStructs(
         if (input.type) {
           const structNames = extractAllStructNames(input.type);
           for (const structName of structNames) {
-            if (structName) structRefs.add(structName);
+          if (structName) structRefs.add(structName);
           }
         }
       }
@@ -156,7 +156,7 @@ function collectRequiredStructs(
         if (ret.RETURNTYPE) {
           const structNames = extractAllStructNames(ret.RETURNTYPE);
           for (const structName of structNames) {
-            if (structName) structRefs.add(structName);
+          if (structName) structRefs.add(structName);
           }
         }
       }
@@ -202,12 +202,12 @@ function collectStructRecursively(
         // Handle STRUCT(SomeStruct) and []STRUCT(SomeStruct)
         const nestedStructNames = extractAllStructNames(field.type);
         for (const nestedStructName of nestedStructNames) {
-          if (nestedStructName) {
-            collectStructRecursively(nestedStructName, allStructs, requiredStructs, processedStructs);
-          }
+        if (nestedStructName) {
+          collectStructRecursively(nestedStructName, allStructs, requiredStructs, processedStructs);
         }
       }
     }
+  }
   }
 }
 

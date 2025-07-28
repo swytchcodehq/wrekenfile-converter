@@ -157,7 +157,7 @@ function extractStructs(collection: any, variables: Record<string, string>): Rec
       return `${name} ${structNameCount[name]}`;
     }
   }
-
+  
   function processItem(item: any) {
     if (item.request) {
       const method = item.request.method || 'GET';
@@ -398,7 +398,7 @@ function extractOperations(collection: any, variables: Record<string, string>): 
       return `${name} ${operationNameCount[name]}`;
     }
   }
-
+  
   function processItem(item: any) {
     if (item.request) {
       const method = item.request.method || 'GET';
@@ -505,13 +505,17 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
       }
     }
   }
-
+  
   wrekenfile += `INTERFACES:\n`;
   for (const operation of operations) {
     wrekenfile += `  ${operation.name}:\n`;
-    wrekenfile += `    SUMMARY: ${operation.SUMMARY}\n`;
-    wrekenfile += `    DESCRIPTION: ${operation.DESCRIPTION}\n`;
-    wrekenfile += `    DESC: ${operation.DESC}\n`;
+    // Quote SUMMARY and DESCRIPTION if they contain special characters
+    const summary = operation.SUMMARY.includes(':') || operation.SUMMARY.includes('"') ? `"${operation.SUMMARY.replace(/"/g, '\\"')}"` : operation.SUMMARY;
+    const description = operation.DESCRIPTION.includes(':') || operation.DESCRIPTION.includes('"') ? `"${operation.DESCRIPTION.replace(/"/g, '\\"')}"` : operation.DESCRIPTION;
+    const desc = operation.DESC.includes(':') || operation.DESC.includes('"') ? `"${operation.DESC.replace(/"/g, '\\"')}"` : operation.DESC;
+    wrekenfile += `    SUMMARY: ${summary}\n`;
+    wrekenfile += `    DESCRIPTION: ${description}\n`;
+    wrekenfile += `    DESC: ${desc}\n`;
     wrekenfile += `    ENDPOINT: ${operation.ENDPOINT}\n`;
     wrekenfile += `    VISIBILITY: ${operation.VISIBILITY}\n`;
     wrekenfile += `    HTTP:\n`;
@@ -523,7 +527,7 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
       }
     }
     wrekenfile += `      BODYTYPE: ${operation.HTTP.BODYTYPE}\n`;
-
+    
     // INPUTS
     if (operation.INPUTS.length === 0) {
       wrekenfile += `    INPUTS: []\n`;
@@ -538,7 +542,7 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
         }
       }
     }
-
+    
     // RETURNS
     wrekenfile += `    RETURNS:\n`;
     for (const ret of operation.RETURNS) {
@@ -547,7 +551,7 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
       wrekenfile += `        CODE: '${ret.CODE}'\n`;
     }
   }
-
+  
   wrekenfile += `STRUCTS:\n`;
   for (const [structName, fields] of Object.entries(structs)) {
     if (fields.length === 0) {
@@ -566,7 +570,7 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
       }
     }
   }
-
+  
   // Debug print: show first 20 lines of STRUCTS block
   const structsBlock = wrekenfile.split('STRUCTS:')[1]?.split('\n').slice(0, 20).join('\n');
   if (structsBlock) {

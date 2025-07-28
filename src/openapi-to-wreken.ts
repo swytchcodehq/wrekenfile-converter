@@ -22,10 +22,10 @@ function mapType(type: any, format?: string): Primitive {
   // Handle array of types (OpenAPI allows type: ['string', 'null'])
   if (Array.isArray(type) && type.length > 0 && typeof type[0] === 'string') {
     const t = type[0].toLowerCase();
-    if (t === 'string') return 'STRING';
-    if (t === 'integer' || t === 'int') return 'INT';
-    if (t === 'number') return 'FLOAT';
-    if (t === 'boolean') return 'BOOL';
+  if (t === 'string') return 'STRING';
+  if (t === 'integer' || t === 'int') return 'INT';
+  if (t === 'number') return 'FLOAT';
+  if (t === 'boolean') return 'BOOL';
     return 'ANY';
   }
   // Fallback for missing or unexpected type
@@ -198,7 +198,7 @@ function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
       }
     }
   }
-
+  
   // Extract schemas from components
   for (const name in schemas) {
     collectAllReferencedSchemas(schemas[name], name);
@@ -208,36 +208,38 @@ function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
     }
   }
   
-  // Extract inline schemas from operations
-  for (const [pathStr, methods] of Object.entries<any>(spec.paths)) {
-    for (const [method, op] of Object.entries<any>(methods)) {
-      const operationId = op.operationId || `${method}-${pathStr.replace(/[\/{}]/g, '-')}`;
-      // Extract request body schemas
-      if (op.requestBody?.content) {
-        for (const [contentType, content] of Object.entries<any>(op.requestBody.content)) {
-          if (content && content.schema) {
-            if (content.schema && content.schema.$ref) {
-              const refName = content.schema.$ref.split('/').pop();
-              if (refName) collectAllReferencedSchemas(resolveRef(content.schema.$ref, spec, baseDir), refName);
-            } else if (content.schema && typeof content.schema === 'object') {
-              const requestStructName = generateStructName(operationId, method, pathStr, 'Request');
-              collectAllReferencedSchemas(content.schema, requestStructName);
+    // Extract inline schemas from operations
+  if (spec.paths && typeof spec.paths === 'object') {
+    for (const [pathStr, methods] of Object.entries<any>(spec.paths)) {
+      for (const [method, op] of Object.entries<any>(methods)) {
+        const operationId = op.operationId || `${method}-${pathStr.replace(/[\/{}]/g, '-')}`;
+        // Extract request body schemas
+        if (op.requestBody?.content) {
+          for (const [contentType, content] of Object.entries<any>(op.requestBody.content)) {
+            if (content && content.schema) {
+              if (content.schema && content.schema.$ref) {
+                const refName = content.schema.$ref.split('/').pop();
+                if (refName) collectAllReferencedSchemas(resolveRef(content.schema.$ref, spec, baseDir), refName);
+              } else if (content.schema && typeof content.schema === 'object') {
+                const requestStructName = generateStructName(operationId, method, pathStr, 'Request');
+                collectAllReferencedSchemas(content.schema, requestStructName);
+              }
             }
           }
         }
-      }
-      // Extract response schemas
-      if (op.responses) {
-        for (const [code, response] of Object.entries<any>(op.responses)) {
-          if (response && response.content) {
-            for (const [contentType, content] of Object.entries<any>(response.content)) {
-              if (content && content.schema) {
-                if (content.schema && content.schema.$ref) {
-                  const refName = content.schema.$ref.split('/').pop();
-                  if (refName) collectAllReferencedSchemas(resolveRef(content.schema.$ref, spec, baseDir), refName);
-                } else if (content.schema && typeof content.schema === 'object') {
-                  const responseStructName = generateStructName(operationId, method, pathStr, `Response${code}`);
-                  collectAllReferencedSchemas(content.schema, responseStructName);
+        // Extract response schemas
+        if (op.responses) {
+          for (const [code, response] of Object.entries<any>(op.responses)) {
+            if (response && response.content) {
+              for (const [contentType, content] of Object.entries<any>(response.content)) {
+                if (content && content.schema) {
+                  if (content.schema && content.schema.$ref) {
+                    const refName = content.schema.$ref.split('/').pop();
+                    if (refName) collectAllReferencedSchemas(resolveRef(content.schema.$ref, spec, baseDir), refName);
+                  } else if (content.schema && typeof content.schema === 'object') {
+                    const responseStructName = generateStructName(operationId, method, pathStr, `Response${code}`);
+                    collectAllReferencedSchemas(content.schema, responseStructName);
+                  }
                 }
               }
             }
@@ -445,6 +447,12 @@ function extractInterfaces(spec: any, baseDir: string): Record<string, any> {
   
   // Valid HTTP methods
   const validMethods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options', 'trace'];
+  
+  // Check if paths exists and is an object
+  if (!spec.paths || typeof spec.paths !== 'object') {
+    console.warn('Warning: No paths found in OpenAPI specification');
+    return interfaces;
+  }
   
   for (const [pathStr, methods] of Object.entries<any>(spec.paths)) {
     for (const [method, op] of Object.entries<any>(methods)) {
