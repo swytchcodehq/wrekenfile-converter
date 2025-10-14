@@ -519,23 +519,21 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
   wrekenfile += `INTERFACES:\n`;
   for (const operation of operations) {
     wrekenfile += `  ${operation.name}:\n`;
-    // Quote SUMMARY and DESC if they contain special characters
-    const summary = operation.SUMMARY.includes(':') || operation.SUMMARY.includes('"') ? `"${operation.SUMMARY.replace(/"/g, '\\"')}"` : operation.SUMMARY;
-    const desc = operation.DESC.includes(':') || operation.DESC.includes('"') ? `"${operation.DESC.replace(/"/g, '\\"')}"` : operation.DESC;
+    // Always quote SUMMARY and DESC to avoid YAML parse issues
+    const summary = `"${String(operation.SUMMARY || '').replace(/"/g, '\\"')}"`;
+    const desc = `"${String(operation.DESC || '').replace(/"/g, '\\"')}"`;
     wrekenfile += `    SUMMARY: ${summary}\n`;
     wrekenfile += `    DESC: ${desc}\n`;
     // TAGS
-    if (!operation.TAGS || operation.TAGS.length === 0) {
-      wrekenfile += `    TAGS: []\n`;
-    } else {
-      wrekenfile += `    TAGS:\n`;
-      for (const tag of operation.TAGS) {
-        const tagVal = (typeof tag === 'string' && (tag.includes(':') || tag.includes('"')))
-          ? `"${String(tag).replace(/"/g, '\\"')}"`
-          : String(tag);
-        wrekenfile += `      - ${tagVal}\n`;
-      }
-    }
+     if (!operation.TAGS || operation.TAGS.length === 0) {
+       wrekenfile += `    TAGS: []\n`;
+     } else {
+       wrekenfile += `    TAGS:\n`;
+       for (const tag of operation.TAGS) {
+         const tagVal = `"${String(tag).replace(/"/g, '\\"')}"`;
+         wrekenfile += `      - ${tagVal}\n`;
+       }
+     }
     wrekenfile += `    ENDPOINT: ${operation.ENDPOINT}\n`;
     wrekenfile += `    VISIBILITY: ${operation.VISIBILITY}\n`;
     wrekenfile += `    HTTP:\n`;
@@ -548,56 +546,46 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
     }
     wrekenfile += `      BODYTYPE: ${operation.HTTP.BODYTYPE}\n`;
     
-    // INPUTS
-    if (operation.INPUTS.length === 0) {
-      wrekenfile += `    INPUTS: []\n`;
-    } else {
-      wrekenfile += `    INPUTS:\n`;
-      for (const input of operation.INPUTS) {
-        wrekenfile += `      - name: ${input.name}\n`;
-        wrekenfile += `        type: ${input.type}\n`;
-        wrekenfile += `        required: '${input.required}'\n`;
-        if (input.location) {
-          wrekenfile += `        location: ${input.location}\n`;
-        }
-      }
-    }
+     // INPUTS
+     if (operation.INPUTS.length === 0) {
+       wrekenfile += `    INPUTS: []\n`;
+     } else {
+       wrekenfile += `    INPUTS:\n`;
+       for (const input of operation.INPUTS) {
+         wrekenfile += `      - name: ${input.name}\n`;
+         wrekenfile += `        type: "${String(input.type).replace(/"/g, '\\"')}"\n`;
+         wrekenfile += `        required: '${input.required}'\n`;
+         if (input.location) {
+           wrekenfile += `        location: ${input.location}\n`;
+         }
+       }
+     }
     
-    // RETURNS
-    wrekenfile += `    RETURNS:\n`;
-    for (const ret of operation.RETURNS) {
-      wrekenfile += `      - RETURNTYPE: ${ret.RETURNTYPE}\n`;
-      wrekenfile += `        RETURNNAME: ${ret.RETURNNAME}\n`;
-      wrekenfile += `        CODE: '${ret.CODE}'\n`;
-    }
+     // RETURNS
+     wrekenfile += `    RETURNS:\n`;
+     for (const ret of operation.RETURNS) {
+       wrekenfile += `      - RETURNTYPE: "${String(ret.RETURNTYPE).replace(/"/g, '\\"')}"\n`;
+       wrekenfile += `        RETURNNAME: ${ret.RETURNNAME}\n`;
+       wrekenfile += `        CODE: '${ret.CODE}'\n`;
+     }
   }
   
   wrekenfile += `STRUCTS:\n`;
-  for (const [structName, fields] of Object.entries(structs)) {
-    if (fields.length === 0) {
-      wrekenfile += `  ${structName}: []\n`;
-    } else {
-      wrekenfile += `  ${structName}:\n`;
-      for (const field of fields) {
-        wrekenfile += '    - name: ' + field.name + '\n';
-        // Quote type if it contains non-alphanumeric characters (except underscore)
-        let typeValue = field.type;
-        if (/[^a-zA-Z0-9_]/.test(typeValue)) {
-          typeValue = '"' + typeValue.replace(/"/g, '\"') + '"';
+    for (const [structName, fields] of Object.entries(structs)) {
+      if (fields.length === 0) {
+        wrekenfile += `  ${structName}: []\n`;
+      } else {
+        wrekenfile += `  ${structName}:\n`;
+        for (const field of fields) {
+          wrekenfile += '    - name: ' + field.name + '\n';
+          const typeValue = '"' + String(field.type).replace(/"/g, '\\"') + '"';
+          wrekenfile += '      type: ' + typeValue + '\n';
+          wrekenfile += "      required: '" + field.required + "'\n";
         }
-        wrekenfile += '      type: ' + typeValue + '\n';
-        wrekenfile += "      required: '" + field.required + "'\n";
       }
     }
-  }
   
   // Debug print: show first 20 lines of STRUCTS block
-  const structsBlock = wrekenfile.split('STRUCTS:')[1]?.split('\n').slice(0, 20).join('\n');
-  if (structsBlock) {
-    console.log('--- STRUCTS block preview ---');
-    console.log(structsBlock);
-  }
-
   wrekenfile = cleanYaml(wrekenfile);
   checkYamlForHiddenChars(wrekenfile);
   validateYaml(wrekenfile);
