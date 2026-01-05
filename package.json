@@ -1,6 +1,6 @@
 {
   "name": "wrekenfile-converter",
-  "version": "2.0.7",
+  "version": "2.1.0",
   "description": "Convert OpenAPI and Postman specs to Wrekenfile format with mini-chunking for vector DB storage",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -29,6 +29,9 @@
   "files": [
     "dist/**/*",
     "README.md",
+    "USAGE.md",
+    "LOCAL_TESTING.md",
+    "QUICK_START.md",
     "wrekenfile.md"
   ],
   "exports": {
@@ -37,20 +40,15 @@
       "require": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./converter": {
-      "import": "./dist/openapi-to-wreken.js",
-      "require": "./dist/openapi-to-wreken.js",
-      "types": "./dist/openapi-to-wreken.d.ts"
+    "./v1": {
+      "import": "./dist/v1/index.js",
+      "require": "./dist/v1/index.js",
+      "types": "./dist/v1/index.d.ts"
     },
-    "./converter-v2": {
-      "import": "./dist/openapi-v2-to-wrekenfile.js",
-      "require": "./dist/openapi-v2-to-wrekenfile.js",
-      "types": "./dist/openapi-v2-to-wrekenfile.d.ts"
-    },
-    "./converter-postman": {
-      "import": "./dist/postman-to-wrekenfile.js",
-      "require": "./dist/postman-to-wrekenfile.js",
-      "types": "./dist/postman-to-wrekenfile.d.ts"
+    "./v2": {
+      "import": "./dist/v2/index.js",
+      "require": "./dist/v2/index.js",
+      "types": "./dist/v2/index.d.ts"
     },
     "./validator": {
       "import": "./dist/wrekenfile-validator.js",

@@ -6,7 +6,7 @@ import {
   generateMiniWrekenfiles,
   validateWrekenfile
 } from './index';
-import { MiniWrekenfile } from './mini-wrekenfile-generator';
+import { MiniWrekenfile } from './v1/mini-wrekenfile-generator';
 
 /**
  * Example usage of the mini Wrekenfile generator

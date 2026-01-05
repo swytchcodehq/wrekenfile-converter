@@ -160,15 +160,37 @@ function validateWrekenfile(filePath: string): ValidationResult {
   };
 
   try {
-    // Read and parse the YAML file
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      result.isValid = false;
+      result.errors.push(`File not found: ${filePath}`);
+      return result;
+    }
+
+    // Read the YAML file
     const fileContent = fs.readFileSync(filePath, 'utf8');
     
-    // Use robust parsing
+    // First, validate that it's valid YAML
+    try {
+      yaml.load(fileContent);
+    } catch (yamlError: any) {
+      result.isValid = false;
+      if (yamlError.name === 'YAMLException') {
+        const line = yamlError.mark?.line !== undefined ? yamlError.mark.line + 1 : 'unknown';
+        const column = yamlError.mark?.column !== undefined ? yamlError.mark.column + 1 : 'unknown';
+        result.errors.push(`Invalid YAML syntax at line ${line}, column ${column}: ${yamlError.message}`);
+      } else {
+        result.errors.push(`Invalid YAML file: ${yamlError.message}`);
+      }
+      return result;
+    }
+    
+    // Use robust parsing (which may try to fix minor issues)
     const data = parseYamlRobust(fileContent);
 
     if (!data) {
       result.isValid = false;
-      result.errors.push('File is empty or could not be parsed');
+      result.errors.push('File is empty or could not be parsed as YAML');
       return result;
     }
 
@@ -212,9 +234,9 @@ function validateVersion(data: WrekenfileStructure, result: ValidationResult): v
     return;
   }
 
-  // Check if version is in expected format (e.g., '1.2')
-  if (!/^\d+\.\d+$/.test(data.VERSION)) {
-    result.warnings.push(`VERSION format '${data.VERSION}' may not be standard`);
+  // Check if version is in expected format (e.g., '1.2' or '2.1.0')
+  if (!/^\d+\.\d+(\.\d+)?$/.test(data.VERSION)) {
+    result.warnings.push(`VERSION format '${data.VERSION}' may not be standard (expected format: X.Y or X.Y.Z)`);
   }
 }
 

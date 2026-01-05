@@ -7,11 +7,17 @@ yarn-error.log*
 # Build outputs
 dist/
 build/
+out/
+.sdk-out/
 
 # Generated files
 mini-wrekenfiles/
 Wrekenfile.yaml
 Wrekenfile.yaml.backup
+
+# Static files
+examples/
+samples/
 
 # Environment files
 .env
@@ -67,6 +73,3 @@ jspm_packages/
 
 # TypeScript cache
 *.tsbuildinfo 
-
-examples/
-mini-wrekenfiles/
