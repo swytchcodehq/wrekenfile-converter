@@ -105,6 +105,18 @@ function groupMethods(methods: Record<string, any>): Record<string, MethodGroupI
         };
       }
       groups[groupKey].methods[methodName] = methodData;
+    } else if (methodData.SOURCE) {
+      // SDK methods with SOURCE but no INTERFACE.NAME - group by SOURCE
+      const source = methodData.SOURCE;
+      const groupKey = `${GROUP_PREFIX_SDK}${source}`;
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          methods: {},
+          type: 'sdk',
+          source: source
+        };
+      }
+      groups[groupKey].methods[methodName] = methodData;
     } else {
       const groupKey = `${GROUP_PREFIX_OTHER}${methodName}`;
       groups[groupKey] = {
@@ -283,11 +295,19 @@ function generateFilename(
   
   if (type === 'http' && endpoint) {
     cleanName = sanitizeFilename(endpoint);
-  } else if (type === 'sdk' && interfaceName) {
-    cleanName = sanitizeFilename(interfaceName);
-    if (source) {
-      const cleanSource = sanitizeFilename(source);
-      cleanName = `${cleanSource}-${cleanName}`;
+  } else if (type === 'sdk') {
+    if (interfaceName) {
+      cleanName = sanitizeFilename(interfaceName);
+      if (source) {
+        const cleanSource = sanitizeFilename(source);
+        cleanName = `${cleanSource}-${cleanName}`;
+      }
+    } else if (source) {
+      // SDK methods grouped by SOURCE only (no interface name)
+      cleanName = sanitizeFilename(source);
+    } else {
+      // Fallback: use method name from groupKey
+      cleanName = sanitizeFilename(groupKey.replace(GROUP_PREFIX_SDK, ''));
     }
   } else {
     cleanName = sanitizeFilename(groupKey.replace(GROUP_PREFIX_OTHER, ''));
