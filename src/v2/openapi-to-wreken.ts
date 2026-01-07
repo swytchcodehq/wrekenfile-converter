@@ -537,7 +537,7 @@ function extractResponses(op: any, operationId: string, method: string, path: st
       if (jsonContent?.schema) {
         const schema = jsonContent.schema;
         // Use getTypeFromSchema to handle arrays, $refs, and inline schemas correctly
-        returnType = getTypeFromSchema(schema, spec, baseDir);
+          returnType = getTypeFromSchema(schema, spec, baseDir);
         
         // If it's an inline object schema (not array, not $ref), we need to create a struct
         if (returnType === 'OBJECT' && !schema.$ref && schema.type === 'object') {

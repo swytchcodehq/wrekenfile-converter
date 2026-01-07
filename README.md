@@ -1,15 +1,16 @@
-# Wrekenfile Converter (Library)
-## Version 2.1.0
+# Wrekenfile Converter
 
-A comprehensive TypeScript/JavaScript library for converting OpenAPI specifications (v2 and v3) and Postman collections into [Wrekenfile](.src/v2/wrekenfile_v_2_0_1.md) YAML format, with advanced mini-chunking capabilities for vector database storage and AI context management.
+A comprehensive TypeScript/JavaScript library for converting OpenAPI specifications (v2 and v3) and Postman collections into [Wrekenfile](src/v2/wrekenfile_v_2_0_1.md) YAML format, with advanced mini-chunking capabilities for vector database storage and AI context management.
 
 ## Features
 
 - **Multi-format Support**: Convert OpenAPI v2 (Swagger), OpenAPI v3, and Postman collections
+- **Wrekenfile v2.0.1 Compliant**: Generates Wrekenfile spec 2.0.1 format (latest)
 - **Complete Response Handling**: All response types (success and error) included in `RETURNS` arrays
+- **Custom Headers Support**: Custom headers are automatically added to `INPUTS` section for dynamic values
+- **Authentication Handling**: Auth headers (Authorization, X-API-Key, etc.) are properly mapped to `HEADERS` with placeholder values
 - **AI-Optimized**: Response structs explicitly referenced for easy AI consumption
 - **Mini Wrekenfile Generation**: Create focused, endpoint-grouped chunks for vector DB storage
-- **Comprehensive Validation**: Built-in Wrekenfile validator with auto-fix capabilities
 - **TypeScript Support**: Full TypeScript definitions and exports
 - **Subproject Ready**: Designed to work as a dependency in larger projects
 
@@ -32,12 +33,12 @@ yarn add wrekenfile-converter
 ### Version Support
 
 This library supports two Wrekenfile spec versions:
-- **v1** (Wrekenfile spec 1.2) - Default/legacy
-- **v2** (Wrekenfile spec 2.1.0) - Latest
+- **v1** (Wrekenfile spec 1.2) - Legacy version
+- **v2** (Wrekenfile spec 2.0.1) - Latest, recommended
 
 ### Importing the Library
 
-**Default import (currently v1, backward compatible):**
+**Default import (v1, for backward compatibility):**
 ```typescript
 import {
   generateWrekenfile, // OpenAPI v3
@@ -50,12 +51,23 @@ import {
 } from 'wrekenfile-converter';
 ```
 
+**Recommended: Use v2 (latest Wrekenfile spec 2.0.1):**
+```typescript
+import {
+  generateWrekenfile, // OpenAPI v3
+  generateWrekenfileV2, // OpenAPI v2 (Swagger)
+  generateWrekenfileFromPostman, // Postman collections
+  generateMiniWrekenfiles,
+  MiniWrekenfile
+} from 'wrekenfile-converter/v2';
+```
+
 **Explicit version imports:**
 ```typescript
 // Import v1 (Wrekenfile spec 1.2)
 import { generateWrekenfile } from 'wrekenfile-converter/v1';
 
-// Import v2 (Wrekenfile spec 2.1.0)
+// Import v2 (Wrekenfile spec 2.0.1) - Recommended
 import { generateWrekenfile } from 'wrekenfile-converter/v2';
 ```
 
@@ -64,7 +76,7 @@ import { generateWrekenfile } from 'wrekenfile-converter/v2';
 ```typescript
 import fs from 'fs';
 import yaml from 'js-yaml';
-import { generateWrekenfile } from 'wrekenfile-converter';
+import { generateWrekenfile } from 'wrekenfile-converter/v2';
 
 const fileContent = fs.readFileSync('./openapi.yaml', 'utf8');
 const openapiSpec = yaml.load(fileContent);
@@ -76,18 +88,18 @@ const wrekenfileYaml = generateWrekenfile(openapiSpec, './');
 ```typescript
 import fs from 'fs';
 import yaml from 'js-yaml';
-import { generateWrekenfile as generateWrekenfileV2 } from 'wrekenfile-converter';
+import { generateWrekenfile } from 'wrekenfile-converter/v2';
 
 const fileContent = fs.readFileSync('./swagger.yaml', 'utf8');
 const swaggerSpec = yaml.load(fileContent);
-const wrekenfileYaml = generateWrekenfileV2(swaggerSpec, './');
+const wrekenfileYaml = generateWrekenfile(swaggerSpec, './');
 ```
 
 ### Convert Postman Collection to Wrekenfile
 
 ```typescript
 import fs from 'fs';
-import { generateWrekenfileFromPostman } from 'wrekenfile-converter';
+import { generateWrekenfileFromPostman } from 'wrekenfile-converter/v2';
 
 const collection = JSON.parse(fs.readFileSync('./collection.json', 'utf8'));
 const variables = {}; // Optionally provide Postman environment variables
@@ -107,30 +119,60 @@ console.log(result.errors, result.warnings);
 ### Generate Mini Wrekenfiles
 
 ```typescript
-import { generateMiniWrekenfiles, MiniWrekenfile } from 'wrekenfile-converter';
+import { generateMiniWrekenfiles, MiniWrekenfile } from 'wrekenfile-converter/v2';
 
 const miniFiles: MiniWrekenfile[] = generateMiniWrekenfiles('./Wrekenfile.yaml');
 // Each miniFile contains { content, metadata }
 ```
 
+## How Headers Are Handled
+
+The converter intelligently handles different types of headers:
+
+- **Authentication Headers** (e.g., `Authorization`, `X-API-Key`, `X-Signature`): Added to the `HEADERS` section with placeholder values like `bearer_token`, `api_key`, etc.
+- **Custom Headers** (e.g., `X-Request-Id`, `X-Client-Version`): Added to the `INPUTS` section as dynamic parameters that callers must provide
+- **Content-Type**: Automatically added to `HEADERS` for POST/PUT/PATCH requests based on the request body type
+
+This ensures that static authentication headers are properly templated while custom headers remain flexible for callers to provide.
+
 ## CLI Tools
 
-### Convert OpenAPI to Wrekenfile
+The CLI tools are available for both v1 and v2. The examples below use v2 (latest), which generates Wrekenfile spec 2.0.1.
 
-Generate a Wrekenfile YAML from an OpenAPI (YAML or JSON) spec:
+### Convert OpenAPI v3 to Wrekenfile
+
+Generate a Wrekenfile YAML from an OpenAPI v3 (YAML or JSON) spec:
 
 ```bash
-npx ts-node src/cli/rest/cli-openapi-to-wrekenfile.ts --input <openapi.yaml|json> [--output <wrekenfile.yaml>] [--cwd <dir>]
+npx ts-node src/v2/cli/cli-openapi-to-wrekenfile.ts --input <openapi.yaml|json> [--output <wrekenfile.yaml>] [--cwd <dir>]
 ```
 
 **Options:**
-- `--input` or `-i`: Path to your OpenAPI YAML or JSON file (required)
+- `--input` or `-i`: Path to your OpenAPI v3 YAML or JSON file (required)
 - `--output` or `-o`: Path to output Wrekenfile YAML (optional, defaults to `output_wrekenfile.yaml`)
 - `--cwd`: Working directory for resolving $refs (optional, defaults to the input file's directory)
 
 **Example:**
 ```bash
-npx ts-node src/cli/rest/cli-openapi-to-wrekenfile.ts --input examples/p3id_swagger.json --output wrekenfile.yaml --cwd .
+npx ts-node src/v2/cli/cli-openapi-to-wrekenfile.ts --input examples/3n.yaml --output 3n_wrekenfile_v2.yaml
+```
+
+### Convert OpenAPI v2 (Swagger) to Wrekenfile
+
+Generate a Wrekenfile YAML from an OpenAPI v2/Swagger (YAML or JSON) spec:
+
+```bash
+npx ts-node src/v2/cli/cli-openapi-v2-to-wrekenfile.ts --input <swagger.yaml|json> [--output <wrekenfile.yaml>] [--cwd <dir>]
+```
+
+**Options:**
+- `--input` or `-i`: Path to your OpenAPI v2/Swagger YAML or JSON file (required)
+- `--output` or `-o`: Path to output Wrekenfile YAML (optional, defaults to `output_wrekenfile.yaml`)
+- `--cwd`: Working directory for resolving $refs (optional, defaults to the input file's directory)
+
+**Example:**
+```bash
+npx ts-node src/v2/cli/cli-openapi-v2-to-wrekenfile.ts --input examples/5n_v2.yaml --output 5n_v2_wrekenfile.yaml
 ```
 
 ### Convert Postman Collection to Wrekenfile
@@ -138,34 +180,37 @@ npx ts-node src/cli/rest/cli-openapi-to-wrekenfile.ts --input examples/p3id_swag
 Convert a Postman collection JSON to a Wrekenfile YAML file:
 
 ```bash
-npx ts-node src/cli/rest/cli-postman-to-wrekenfile.ts <postman_collection.json> <output_wrekenfile.yaml> [postman_environment.json]
+npx ts-node src/v2/cli/cli-postman-to-wrekenfile.ts <postman_collection.json> <output_wrekenfile.yaml> [postman_environment.json]
 ```
+
+**Arguments:**
+- `postman_collection.json`: Path to your Postman collection JSON file (required)
+- `output_wrekenfile.yaml`: Path to output Wrekenfile YAML (required)
+- `postman_environment.json`: Path to Postman environment file (optional)
 
 **Example:**
 ```bash
-npx ts-node src/cli/rest/cli-postman-to-wrekenfile.ts examples/transact_bridge_postman.json wrekenfile.yaml
+npx ts-node src/v2/cli/cli-postman-to-wrekenfile.ts examples/Nium\ APIpostman_collection.json nium_wrekenfile_v2.yaml
 ```
-
-**Note:** The third argument (environment file) is optional.
 
 ### Generate Mini Wrekenfiles
 
 Generate mini Wrekenfiles for each endpoint from a main Wrekenfile YAML:
 
 ```bash
-npx ts-node src/cli/cli-mini-wrekenfile-generator.ts --input <wrekenfile.yaml> [--output <dir>]
+npx ts-node src/v2/cli/cli-mini-wrekenfile-generator.ts --input <wrekenfile.yaml> [--output <dir>]
 ```
 
 **Options:**
 - `--input` or `-i`: Path to your main Wrekenfile YAML (required)
-- `--output` or `-o`: Output directory for mini Wrekenfiles (optional, defaults to `./mini-wrekenfiles`)
+- `--output` or `-o`: Output directory for mini Wrekenfiles (optional, defaults to `./mini-wrekenfiles-v2`)
 
 **Example:**
 ```bash
-npx ts-node src/cli/cli-mini-wrekenfile-generator.ts --input wrekenfile.yaml --output ./mini-wrekenfiles
+npx ts-node src/v2/cli/cli-mini-wrekenfile-generator.ts --input wrekenfile.yaml --output ./mini-wrekenfiles-v2
 ```
 
-This will generate one mini Wrekenfile per endpoint in the specified output directory.
+This will generate one mini Wrekenfile per endpoint in the specified output directory, grouped by endpoint path.
 
 ## API Reference
 
@@ -243,7 +288,7 @@ src/
 │   ├── mini-wrekenfile-generator.ts
 │   ├── wrekenfile-validator.ts
 │   └── cli/                        # CLI tools for v1
-└── v2/                             # Wrekenfile spec v2.1.0
+└── v2/                             # Wrekenfile spec v2.0.1
     ├── index.ts
     ├── openapi-to-wreken.ts
     ├── openapi-v2-to-wrekenfile.ts

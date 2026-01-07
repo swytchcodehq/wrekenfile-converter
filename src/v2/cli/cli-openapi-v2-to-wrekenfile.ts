@@ -5,7 +5,7 @@ import { load } from 'js-yaml';
 import { generateWrekenfile } from '../openapi-v2-to-wrekenfile';
 
 function printUsage() {
-  console.log(`Usage: npx ts-node src/cli/rest/cli-openapi-v2-to-wrekenfile.ts --input <swagger.yaml|json> [--output <wrekenfile.yaml>] [--cwd <dir>]`);
+  console.log(`Usage: npx ts-node src/v2/cli/cli-openapi-v2-to-wrekenfile.ts --input <swagger.yaml|json> [--output <wrekenfile.yaml>] [--cwd <dir>]`);
 }
 
 function parseArgs() {

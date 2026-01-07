@@ -4,7 +4,7 @@ import path from 'path';
 import { generateWrekenfile, loadEnvironmentFile } from '../postman-to-wrekenfile';
 
 function printUsage() {
-  console.log('Usage: npx ts-node src/cli/rest/cli-postman-to-wrekenfile.ts <postman_collection.json> <output_wrekenfile.yaml> [postman_environment.json]');
+  console.log('Usage: npx ts-node src/v2/cli/cli-postman-to-wrekenfile.ts <postman_collection.json> <output_wrekenfile.yaml> [postman_environment.json]');
   process.exit(1);
 }
 

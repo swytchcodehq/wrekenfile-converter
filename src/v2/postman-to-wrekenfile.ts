@@ -700,7 +700,7 @@ function extractBaseUrl(collection: any, variables: Record<string, string>): str
       // If it's a variable placeholder, skip it
       if (!baseUrl.startsWith('{{')) {
         return baseUrl;
-      }
+}
     }
   }
   
@@ -732,9 +732,9 @@ function extractBaseUrl(collection: any, variables: Record<string, string>): str
               ? url.protocol.replace(':', '') 
               : 'https';
             return `${protocol}://${resolvedHost}`;
-          }
-        }
-      }
+    }
+  }
+}
     }
     if (item.item && Array.isArray(item.item)) {
       for (const subItem of item.item) {
@@ -750,7 +750,7 @@ function extractBaseUrl(collection: any, variables: Record<string, string>): str
       const baseUrl = findFirstRequestUrl(item);
       if (baseUrl) {
         return baseUrl.replace(/\/$/, '');
-      }
+  }
     }
   }
   

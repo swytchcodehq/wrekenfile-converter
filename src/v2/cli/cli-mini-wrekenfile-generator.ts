@@ -4,7 +4,7 @@ import * as path from 'path';
 import { generateMiniWrekenfiles, saveMiniWrekenfiles } from '../mini-wrekenfile-generator';
 
 function printUsage() {
-  console.log('Usage: npx ts-node src/cli/cli-mini-wrekenfile-generator.ts --input <wrekenfile.yaml> [--output <dir>]');
+  console.log('Usage: npx ts-node src/v2/cli/cli-mini-wrekenfile-generator.ts --input <wrekenfile.yaml> [--output <dir>]');
 }
 
 function parseArgs() {
