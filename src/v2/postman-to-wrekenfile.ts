@@ -2,8 +2,7 @@
 // Converts Postman collections to Wrekenfile v2.0.1 format
 import * as fs from 'fs';
 import * as path from 'path';
-import { dump } from 'js-yaml';
-import { cleanYaml, checkYamlForHiddenChars, validateYaml, removeTypeQuotes } from './utils/yaml-utils';
+import { generateYamlString } from './utils/yaml-utils';
 import { 
   WREKENFILE_VERSION, 
   DEFAULT_BASE_URL, 
@@ -797,7 +796,10 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
       if (isSensitive) {
         defaults[key] = `{{${key}}}`;
       } else {
-        defaults[key] = value;
+        // Ensure value is a string for DEFAULTS section
+        if (value !== undefined && value !== null) {
+          defaults[key] = String(value);
+        }
       }
     }
   }
@@ -819,15 +821,8 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
     wrekenfile.STRUCTS = structs;
   }
 
-  let yamlString = dump(wrekenfile, YAML_DUMP_OPTIONS);
-
-  // Post-process to remove quotes from type strings
-  yamlString = removeTypeQuotes(yamlString);
-
-  yamlString = cleanYaml(yamlString);
-  checkYamlForHiddenChars(yamlString);
-  validateYaml(yamlString);
-  return yamlString;
+  // Generate YAML string using the standard pipeline
+  return generateYamlString(wrekenfile);
 }
 
 export {

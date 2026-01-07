@@ -14,7 +14,7 @@ import {
   FILENAME_TRAILING_SLASHES,
   YAML_DUMP_OPTIONS,
 } from './utils/constants';
-import { removeTypeQuotes, cleanYaml, checkYamlForHiddenChars, validateYaml } from './utils/yaml-utils';
+import { generateYamlString } from './utils/yaml-utils';
 
 export interface MiniWrekenfile {
   content: string;
@@ -156,13 +156,8 @@ function createMiniWrekenfile(
     miniData.STRUCTS = requiredStructs;
   }
   
-  let content = yaml.dump(miniData, YAML_DUMP_OPTIONS);
-  
-  // Post-process to ensure proper type quoting and formatting
-  content = removeTypeQuotes(content);
-  content = cleanYaml(content);
-  checkYamlForHiddenChars(content);
-  validateYaml(content);
+  // Generate YAML string using the standard pipeline
+  const content = generateYamlString(miniData);
   
   const methodList = Object.values(methods).map((method: any) => {
     return method.HTTP?.METHOD || method.INTERFACE?.NAME || Object.keys(methods)[0];
