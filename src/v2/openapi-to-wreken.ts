@@ -2,8 +2,8 @@
 // Converts OpenAPI v3 specifications to Wrekenfile v2.0.1 format
 import * as fs from 'fs';
 import * as path from 'path';
-import { load, dump } from 'js-yaml';
-import { cleanYaml, checkYamlForHiddenChars, validateYaml, removeTypeQuotes } from './utils/yaml-utils';
+import { load } from 'js-yaml';
+import { generateYamlString } from './utils/yaml-utils';
 import { 
   WREKENFILE_VERSION, 
   DEFAULT_BASE_URL, 
@@ -585,7 +585,9 @@ function extractResponses(op: any, operationId: string, method: string, path: st
             } else if (resolvedSchema.properties.page !== undefined || resolvedSchema.properties.pageNumber !== undefined) {
               returnItem.PAGINATION = {
                 TYPE: 'page',
-                PAGE_SIZE_FIELD: resolvedSchema.properties.pageSize || 'limit',
+                PAGE_SIZE_FIELD: (resolvedSchema.properties.pageSize !== undefined && resolvedSchema.properties.pageSize !== null) 
+                  ? String(resolvedSchema.properties.pageSize) 
+                  : 'limit',
               };
             }
           }
@@ -811,15 +813,8 @@ function generateWrekenfile(spec: any, baseDir: string): string {
     wrekenfile.STRUCTS = structs;
   }
 
-  let yamlString = dump(wrekenfile, YAML_DUMP_OPTIONS);
-
-  // Post-process to remove quotes from type strings
-  yamlString = removeTypeQuotes(yamlString);
-
-  yamlString = cleanYaml(yamlString);
-  checkYamlForHiddenChars(yamlString);
-  validateYaml(yamlString);
-  return yamlString;
+  // Generate YAML string using the standard pipeline
+  return generateYamlString(wrekenfile);
 }
 
 // Export for programmatic use

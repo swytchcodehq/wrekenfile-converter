@@ -1,9 +1,10 @@
-import { load as yamlLoad } from 'js-yaml';
+import { load as yamlLoad, dump } from 'js-yaml';
 import {
   YAML_DOCUMENT_SEPARATOR_START,
   YAML_DOCUMENT_SEPARATOR_END,
   YAML_SEPARATOR_LINES,
 } from './constants';
+import { YAML_DUMP_OPTIONS } from './constants';
 
 const TAB_REPLACEMENT = '  ';
 const NON_BREAKING_SPACE = '\u00A0';
@@ -105,6 +106,66 @@ export function removeTypeQuotes(yamlString: string): string {
     }
     return match;
   });
+  
+  return yamlString;
+}
+
+/**
+ * Recursively removes undefined values from an object.
+ * This prevents js-yaml from generating invalid YAML or unexpected output.
+ */
+export function removeUndefinedValues(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return undefined;
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => removeUndefinedValues(item)).filter(item => item !== undefined);
+  }
+  
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      const cleanedValue = removeUndefinedValues(value);
+      if (cleanedValue !== undefined) {
+        cleaned[key] = cleanedValue;
+      }
+    }
+    return cleaned;
+  }
+  
+  return obj;
+}
+
+/**
+ * Complete YAML generation pipeline:
+ * 1. Remove undefined values
+ * 2. Dump to YAML string
+ * 3. Remove type quotes
+ * 4. Clean YAML
+ * 5. Check for hidden characters
+ * 6. Validate YAML
+ * 
+ * This is the standard pipeline used by all converters.
+ */
+export function generateYamlString(data: any): string {
+  // Remove undefined values before dumping to YAML
+  const cleanedData = removeUndefinedValues(data);
+  
+  // Dump to YAML string
+  let yamlString = dump(cleanedData, YAML_DUMP_OPTIONS);
+  
+  // Post-process to remove quotes from type strings
+  yamlString = removeTypeQuotes(yamlString);
+  
+  // Clean YAML (remove tabs, normalize newlines, etc.)
+  yamlString = cleanYaml(yamlString);
+  
+  // Check for hidden characters
+  checkYamlForHiddenChars(yamlString);
+  
+  // Validate YAML
+  validateYaml(yamlString);
   
   return yamlString;
 }

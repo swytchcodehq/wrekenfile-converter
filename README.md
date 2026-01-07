@@ -1,11 +1,14 @@
 # Wrekenfile Converter
 
-A comprehensive TypeScript/JavaScript library for converting OpenAPI specifications (v2 and v3) and Postman collections into [Wrekenfile](src/v2/wrekenfile_v_2_0_1.md) YAML format, with advanced mini-chunking capabilities for vector database storage and AI context management.
+A comprehensive TypeScript/JavaScript library for converting OpenAPI specifications (v2 and v3) and Postman collections into **Wrekenfiles**, declarative YAML artifacts that act as the single source of truth for API methods, workflows, headers, and responses.
+Generated Wrekenfiles are compliant with the [**Wreken Specification v2.0.1**](./src/v2/wrekenfile_v_2_0_1.md) and support advanced mini-chunking for vector database storage and AI context management.
+
+
 
 ## Features
 
 - **Multi-format Support**: Convert OpenAPI v2 (Swagger), OpenAPI v3, and Postman collections
-- **Wrekenfile v2.0.1 Compliant**: Generates Wrekenfile spec 2.0.1 format (latest)
+- **Wrekenfile v2.0.1 Compliant**: Generates Wrekenfiles compliant with the Wreken Specification v2.0.1 (latest)
 - **Complete Response Handling**: All response types (success and error) included in `RETURNS` arrays
 - **Custom Headers Support**: Custom headers are automatically added to `INPUTS` section for dynamic values
 - **Authentication Handling**: Auth headers (Authorization, X-API-Key, etc.) are properly mapped to `HEADERS` with placeholder values
@@ -32,9 +35,9 @@ yarn add wrekenfile-converter
 
 ### Version Support
 
-This library supports two Wrekenfile spec versions:
-- **v1** (Wrekenfile spec 1.2) - Legacy version
-- **v2** (Wrekenfile spec 2.0.1) - Latest, recommended
+This library supports two Wrekenfile versions:
+- **v1** based on Wreken Specification 1.2 (legacy)
+- **v2** based on Wreken Specification 2.0.1 (latest)
 
 ### Importing the Library
 
