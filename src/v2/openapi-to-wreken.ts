@@ -13,58 +13,31 @@ import {
   TYPE_VOID,
   TYPE_ANY,
   BODYTYPE_RAW,
+  CONTENT_TYPE_JSON,
+  CONTENT_TYPE_FORM_DATA,
+  CONTENT_TYPE_URLENCODED,
+  HEADER_CONTENT_TYPE,
+  HEADER_AUTHORIZATION,
+  AUTH_BEARER_TOKEN,
+  AUTH_BASIC_AUTH,
+  AUTH_DIGEST_AUTH,
+  AUTH_ID_TOKEN,
+  AUTH_TEMPLATE_BEARER,
+  AUTH_TEMPLATE_BEARER_ACCESS,
+  AUTH_TEMPLATE_BASIC,
+  AUTH_TEMPLATE_DIGEST,
+  AUTH_TEMPLATE_ID_TOKEN,
+  HTTP_METHODS_WITH_BODY,
 } from './utils/constants';
 import { generateReturnVarName, generateErrorWhen } from './utils/response-utils';
+import { mapOpenApiType, Primitive } from './utils/type-utils';
+import { generateOpenApiSummary } from './utils/summary-utils';
 
-type Primitive = 'STRING' | 'INT' | 'FLOAT' | 'BOOL' | 'TIMESTAMP' | 'DATE' | 'TIME' | 'NULL' | 'UNDEFINED' | 'VOID' | 'ANY' | 'OBJECT';
 const externalRefCache: Record<string, any> = {};
 
-function mapType(type: any, format?: string): Primitive {
-  if (format === 'uuid') return 'STRING'; // UUID is typically a string
-  if (format === 'date-time') return 'TIMESTAMP';
-  if (format === 'date') return 'DATE';
-  if (format === 'time') return 'TIME';
-  if (format === 'binary') return 'STRING'; // File uploads
-  if (typeof type === 'string') {
-    const t = type.toLowerCase();
-    if (t === 'string') return 'STRING';
-    if (t === 'integer' || t === 'int') return 'INT';
-    if (t === 'number') return 'FLOAT';
-    if (t === 'boolean' || t === 'bool') return 'BOOL';
-    if (t === 'null') return 'NULL';
-    return 'ANY';
-  }
-  // Handle array of types (OpenAPI allows type: ['string', 'null'])
-  if (Array.isArray(type) && type.length > 0 && typeof type[0] === 'string') {
-    const t = type[0].toLowerCase();
-    if (t === 'string') return 'STRING';
-    if (t === 'integer' || t === 'int') return 'INT';
-    if (t === 'number') return 'FLOAT';
-    if (t === 'boolean' || t === 'bool') return 'BOOL';
-    return 'ANY';
-  }
-  // Fallback for missing or unexpected type
-  return 'ANY';
-}
-
-function generateSummary(op: any, method: string, path: string): string {
-  if (op.summary) return op.summary;
-  if (op.description) {
-    // Use first sentence of description as summary
-    const firstSentence = op.description.split(/[.!?]\s/)[0];
-    return firstSentence || op.description.substring(0, 100);
-  }
-  if (op.operationId) return `Perform operation ${op.operationId}`;
-  const verb = {
-    get: 'Fetch',
-    post: 'Create',
-    put: 'Update',
-    delete: 'Delete',
-    patch: 'Modify',
-  }[method.toLowerCase()] || 'Call';
-  const entity = path.split('/').filter(p => p && !p.startsWith('{')).pop() || 'resource';
-  return `${verb} ${entity}`;
-}
+// Re-export for backward compatibility
+const mapType = mapOpenApiType;
+const generateSummary = generateOpenApiSummary;
 
 function resolveRef(ref: string, spec: any, baseDir: string): any {
   if (ref.startsWith('#/')) {
@@ -316,31 +289,32 @@ function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
 function getContentTypeAndBodyType(op: any): { contentType: string; bodyType: string } {
   const requestBody = op.requestBody;
   if (!requestBody?.content) {
-    return { contentType: 'application/json', bodyType: 'raw' };
+    return { contentType: CONTENT_TYPE_JSON, bodyType: BODYTYPE_RAW };
   }
 
   const contentTypes = Object.keys(requestBody.content);
-  const contentType = contentTypes[0] || 'application/json';
+  const contentType = contentTypes[0] || CONTENT_TYPE_JSON;
   
-  let bodyType = 'raw';
-  if (contentType === 'multipart/form-data') {
+  let bodyType = BODYTYPE_RAW;
+  if (contentType === CONTENT_TYPE_FORM_DATA) {
     bodyType = 'form-data';
-  } else if (contentType === 'application/x-www-form-urlencoded') {
+  } else if (contentType === CONTENT_TYPE_URLENCODED) {
     bodyType = 'x-www-form-urlencoded';
   }
 
   return { contentType, bodyType };
 }
 
-function getHeadersForOperation(op: any, spec: any): Record<string, string> {
+function getHeadersForOperation(op: any, spec: any, method?: string, baseDir?: string): Record<string, string> {
   const { contentType } = getContentTypeAndBodyType(op);
   
   // Use a Map to prevent duplicate headers
   const headerMap = new Map<string, string>();
   
   // Add Content-Type header for POST/PUT/PATCH requests
-  if (['post', 'put', 'patch'].includes(op.method?.toLowerCase() || '')) {
-    headerMap.set('Content-Type', contentType);
+  const httpMethod = method?.toLowerCase() || op.method?.toLowerCase() || '';
+  if (HTTP_METHODS_WITH_BODY.includes(httpMethod)) {
+    headerMap.set(HEADER_CONTENT_TYPE, contentType);
   }
   
   // Add security headers based on the operation's security requirements
@@ -352,23 +326,36 @@ function getHeadersForOperation(op: any, spec: any): Record<string, string> {
       if (scheme) {
         if (scheme.type === 'http') {
           if (scheme.scheme === 'bearer') {
-            headerMap.set('Authorization', 'bearer_token');
+            headerMap.set(HEADER_AUTHORIZATION, AUTH_BEARER_TOKEN);
           } else if (scheme.scheme === 'basic') {
-            headerMap.set('Authorization', 'basic_auth');
+            headerMap.set(HEADER_AUTHORIZATION, AUTH_BASIC_AUTH);
           } else if (scheme.scheme === 'digest') {
-            headerMap.set('Authorization', 'digest_auth');
+            headerMap.set(HEADER_AUTHORIZATION, AUTH_DIGEST_AUTH);
           } else {
-            headerMap.set('Authorization', `<${scheme.scheme}_auth>`);
+            headerMap.set(HEADER_AUTHORIZATION, `<${scheme.scheme}_auth>`);
           }
         } else if (scheme.type === 'apiKey') {
           if (scheme.in === 'header') {
             headerMap.set(scheme.name, scheme.name.toLowerCase());
           }
         } else if (scheme.type === 'oauth2') {
-          headerMap.set('Authorization', 'bearer_token');
+          headerMap.set(HEADER_AUTHORIZATION, AUTH_BEARER_TOKEN);
         } else if (scheme.type === 'openIdConnect') {
-          headerMap.set('Authorization', 'id_token');
+          headerMap.set(HEADER_AUTHORIZATION, AUTH_ID_TOKEN);
         }
+      }
+    }
+  }
+  
+  // Check if Authorization is used as a parameter but not defined in securitySchemes
+  if (op.parameters) {
+    for (let param of op.parameters) {
+      // Resolve $ref if present
+      if (param && typeof param === 'object' && param.$ref) {
+        param = resolveRef(param.$ref, spec, baseDir || '');
+      }
+      if (param && typeof param === 'object' && param.in === 'header' && param.name === HEADER_AUTHORIZATION && !headerMap.has(HEADER_AUTHORIZATION)) {
+        headerMap.set(HEADER_AUTHORIZATION, AUTH_BEARER_TOKEN);
       }
     }
   }
@@ -394,6 +381,7 @@ function extractParameters(op: any, spec: any, baseDir: string): any[] {
 
     const paramName = param.name;
     const paramSchema = param.schema || {};
+    const paramIn = param.in || 'query';
     
     let type = 'STRING';
     if (paramSchema.type) {
@@ -402,7 +390,11 @@ function extractParameters(op: any, spec: any, baseDir: string): any[] {
       type = getTypeFromSchema(paramSchema, spec, baseDir);
     }
     
-    const isRequired = param.required !== false; // Default to true if not specified
+    // Path parameters are always required in OpenAPI
+    // Query and header parameters default to false if not specified
+    const isRequired = paramIn === 'path' 
+      ? (param.required !== false)  // Path params default to true
+      : (param.required === true);   // Query/header params default to false
     const hasDefault = paramSchema.default !== undefined;
     
     // Build input parameter in v2.0.1 format
@@ -437,7 +429,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
   }
   const contentTypes = Object.keys(requestBody.content);
   const contentType = contentTypes[0];
-  if (contentType === 'application/json' && requestBody.content[contentType]?.schema) {
+  if (contentType === CONTENT_TYPE_JSON && requestBody.content[contentType]?.schema) {
     const bodySchema = requestBody.content[contentType].schema;
     let type: string;
     if (bodySchema && bodySchema.$ref) {
@@ -449,7 +441,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
       type = 'ANY';
     }
     
-    const isRequired = requestBody.required !== false;
+    const isRequired = requestBody.required === true;
     if (isRequired) {
       // Simple form
       const inputParam: any = {};
@@ -541,7 +533,7 @@ function extractResponses(op: any, operationId: string, method: string, path: st
     }
 
     if (content) {
-      const jsonContent = content['application/json'];
+      const jsonContent = content[CONTENT_TYPE_JSON];
       if (jsonContent?.schema) {
         const schema = jsonContent.schema;
         // Use getTypeFromSchema to handle arrays, $refs, and inline schemas correctly
@@ -574,7 +566,7 @@ function extractResponses(op: any, operationId: string, method: string, path: st
 
       // Check for pagination hints in response schema
       if (content) {
-        const jsonContent = content['application/json'];
+        const jsonContent = content[CONTENT_TYPE_JSON];
         if (jsonContent?.schema) {
           const schema = jsonContent.schema;
           const resolvedSchema = schema.$ref ? resolveRef(schema.$ref, spec, baseDir) : schema;
@@ -621,7 +613,7 @@ function extractErrors(op: any, spec: any, baseDir: string): any[] {
       let when = `HTTP ${code}`;
 
       if (content) {
-        const jsonContent = content['application/json'];
+        const jsonContent = content[CONTENT_TYPE_JSON];
         if (jsonContent?.schema) {
           const schema = jsonContent.schema;
           if (schema.$ref) {
@@ -670,6 +662,8 @@ function extractMethods(spec: any, baseDir: string): Record<string, any> {
   }
   
   for (const [pathStr, pathMethods] of Object.entries<any>(spec.paths)) {
+    const pathLevelParams = pathMethods.parameters || [];
+    
     for (const [method, op] of Object.entries<any>(pathMethods)) {
       // Skip extension fields (x-*) and only process valid HTTP methods
       if (method.startsWith('x-') || !validMethods.includes(method.toLowerCase())) {
@@ -682,13 +676,17 @@ function extractMethods(spec: any, baseDir: string): Record<string, any> {
       const summary = generateSummary(op, method, pathStr);
       const endpoint = pathStr;
       
-      const { bodyType } = getContentTypeAndBodyType(op);
-      const headers = getHeadersForOperation(op, spec);
-      const pathQueryHeaderParams = extractParameters(op, spec, baseDir);
-      const bodyParams = extractRequestBody(op, operationId, method, pathStr, spec, baseDir);
+      // Merge path-level and operation-level parameters (OpenAPI v3)
+      const allParams = [...pathLevelParams, ...(op.parameters || [])];
+      const opWithMergedParams = { ...op, parameters: allParams };
+      
+      const { bodyType } = getContentTypeAndBodyType(opWithMergedParams);
+      const headers = getHeadersForOperation(opWithMergedParams, spec, method, baseDir);
+      const pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, baseDir);
+      const bodyParams = extractRequestBody(opWithMergedParams, operationId, method, pathStr, spec, baseDir);
       const inputParams = [...pathQueryHeaderParams, ...bodyParams];
-      const returns = extractResponses(op, operationId, method, pathStr, spec, baseDir);
-      const errors = extractErrors(op, spec, baseDir);
+      const returns = extractResponses(opWithMergedParams, operationId, method, pathStr, spec, baseDir);
+      const errors = extractErrors(opWithMergedParams, spec, baseDir);
 
       // Build method in v2.0.1 format
       const methodDef: any = {
@@ -753,11 +751,11 @@ function extractSecurityDefaults(spec: any): Record<string, string> {
   for (const [name, scheme] of Object.entries<any>(securitySchemes)) {
     if (scheme.type === 'http') {
       if (scheme.scheme === 'bearer') {
-        defs.bearer_token = 'BEARER <TOKEN>';
+        defs.bearer_token = AUTH_TEMPLATE_BEARER;
       } else if (scheme.scheme === 'basic') {
-        defs.basic_auth = 'Basic <BASE64>';
+        defs.basic_auth = AUTH_TEMPLATE_BASIC;
       } else if (scheme.scheme === 'digest') {
-        defs.digest_auth = 'Digest <CREDENTIALS>';
+        defs.digest_auth = AUTH_TEMPLATE_DIGEST;
       } else {
         defs[`${scheme.scheme}_auth`] = `<${scheme.scheme.toUpperCase()}_CREDENTIALS>`;
       }
@@ -770,9 +768,9 @@ function extractSecurityDefaults(spec: any): Record<string, string> {
         defs[`cookie_${scheme.name.toLowerCase()}`] = `<${scheme.name.toUpperCase()}>`;
       }
     } else if (scheme.type === 'oauth2') {
-      defs.bearer_token = 'BEARER <ACCESS_TOKEN>';
+      defs.bearer_token = AUTH_TEMPLATE_BEARER_ACCESS;
     } else if (scheme.type === 'openIdConnect') {
-      defs.id_token = 'ID_TOKEN <JWT>';
+      defs.id_token = AUTH_TEMPLATE_ID_TOKEN;
     }
   }
   

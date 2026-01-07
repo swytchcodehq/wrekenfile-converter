@@ -14,10 +14,23 @@ import {
   ASYNC_RETURNS_RESULT,
   TYPE_VOID,
   BODYTYPE_RAW,
+  CONTENT_TYPE_JSON,
+  CONTENT_TYPE_FORM_DATA,
+  CONTENT_TYPE_URLENCODED,
+  HEADER_CONTENT_TYPE,
+  HEADER_AUTHORIZATION,
+  AUTH_BEARER_TOKEN,
+  AUTH_API_KEY,
+  AUTH_SIGNATURE,
+  AUTH_HEADER_X_API_KEY,
+  AUTH_HEADER_AUTHORIZATION,
+  AUTH_HEADER_X_SIGNATURE,
+  HTTP_METHOD_GET,
+  HTTP_METHODS_WITH_BODY,
+  SUMMARY_VERBS,
 } from './utils/constants';
 import { generateReturnVarName, generateErrorWhen } from './utils/response-utils';
-
-type Primitive = 'STRING' | 'INT' | 'FLOAT' | 'BOOL' | 'TIMESTAMP' | 'DATE' | 'TIME' | 'NULL' | 'UNDEFINED' | 'VOID' | 'ANY' | 'OBJECT';
+import { Primitive } from './utils/type-utils';
 
 function mapType(value: any): Primitive {
   if (typeof value === 'string') {
@@ -56,13 +69,7 @@ function generateSummary(item: any, method: string, path: string): string {
     const firstSentence = cleaned.split(/[.!?]\s/)[0];
     return firstSentence || cleaned.substring(0, 100);
   }
-  const verb = {
-    get: 'Fetch',
-    post: 'Create',
-    put: 'Update',
-    delete: 'Delete',
-    patch: 'Modify',
-  }[method.toLowerCase()] || 'Call';
+  const verb = SUMMARY_VERBS[method.toLowerCase()] || 'Call';
   const entity = path.split('/').filter(p => p && !p.startsWith('{')).pop() || 'resource';
   return `${verb} ${entity}`;
 }
@@ -195,7 +202,7 @@ function extractStructs(collection: any, variables: Record<string, string>): Rec
   
   function processItem(item: any) {
     if (item.request) {
-      const method = item.request.method || 'GET';
+      const method = item.request.method || HTTP_METHOD_GET;
       const url = item.request.url;
       const path = extractPathFromUrl(url, variables);
       const itemName = item.name || 'unknown';
@@ -272,33 +279,43 @@ function extractPathFromUrl(url: any, variables: Record<string, string>): string
   if (url?.raw) {
     // Remove base URL and protocol
     let path = url.raw;
-    path = resolveVariables(path, variables); // Resolve variables first
     path = path.replace(/^https?:\/\/[^\/]+/, ''); // Remove protocol and host
-    path = path.replace(/\{\{.*?\}\}/g, ''); // Remove any remaining Postman variables
+    // Remove base URL variables like {{url}} from path (they belong in base URL)
+    path = path.replace(/\{\{url\}\}/gi, '');
+    // Convert Postman path variables {{var}} to OpenAPI-style {var}
+    path = path.replace(/\{\{([^}]+)\}\}/g, '{$1}');
     path = path.replace(/\/+/g, '/'); // Normalize slashes
     path = path.replace(/^\/|\/$/g, ''); // Remove leading/trailing slashes
     return path;
   }
   if (url?.path) {
-    const resolvedPath = url.path.map((segment: string) => resolveVariables(segment, variables));
-    return resolvedPath.join('/');
+    const pathSegments = url.path
+      .filter((segment: string) => {
+        // Filter out base URL variables like {{url}}
+        return !segment.match(/^\{\{url\}\}$/i);
+      })
+      .map((segment: string) => {
+        // Convert Postman variables {{var}} to OpenAPI-style {var}
+        return segment.replace(/\{\{([^}]+)\}\}/g, '{$1}');
+      });
+    return pathSegments.join('/');
   }
   return '';
 }
 
 function getContentTypeAndBodyType(request: any): { contentType: string; bodyType: string } {
   const headers = request.header || [];
-  const contentTypeHeader = headers.find((h: any) => h.key?.toLowerCase() === 'content-type');
+  const contentTypeHeader = headers.find((h: any) => h.key?.toLowerCase() === HEADER_CONTENT_TYPE.toLowerCase());
   
-  let contentType = 'application/json';
+  let contentType = CONTENT_TYPE_JSON;
   if (contentTypeHeader) {
-    contentType = contentTypeHeader.value || 'application/json';
+    contentType = contentTypeHeader.value || CONTENT_TYPE_JSON;
   }
   
-  let bodyType = 'raw';
-  if (contentType === 'multipart/form-data') {
+  let bodyType = BODYTYPE_RAW;
+  if (contentType === CONTENT_TYPE_FORM_DATA) {
     bodyType = 'form-data';
-  } else if (contentType === 'application/x-www-form-urlencoded') {
+  } else if (contentType === CONTENT_TYPE_URLENCODED) {
     bodyType = 'x-www-form-urlencoded';
   }
   
@@ -310,8 +327,8 @@ function getHeadersForOperation(request: any, variables: Record<string, string>)
   const headerMap = new Map<string, string>();
   
   // Add Content-Type header for POST/PUT/PATCH requests
-  if (['post', 'put', 'patch'].includes(request.method?.toLowerCase() || '')) {
-    headerMap.set('Content-Type', contentType);
+  if (HTTP_METHODS_WITH_BODY.includes(request.method?.toLowerCase() || '')) {
+    headerMap.set(HEADER_CONTENT_TYPE, contentType);
   }
   
   // Add authentication headers
@@ -319,11 +336,11 @@ function getHeadersForOperation(request: any, variables: Record<string, string>)
   for (const header of authHeaders) {
     if (header.key && header.value) {
       const key = header.key.toLowerCase();
-      if (key === 'x-api-key' || key === 'authorization' || key === 'x-signature') {
+      if (key === AUTH_HEADER_X_API_KEY || key === AUTH_HEADER_AUTHORIZATION || key === AUTH_HEADER_X_SIGNATURE) {
         let value = resolveVariables(header.value, variables);
-        if (key === 'x-api-key') value = 'api_key';
-        else if (key === 'authorization') value = 'bearer_token';
-        else if (key === 'x-signature') value = 'signature';
+        if (key === AUTH_HEADER_X_API_KEY) value = AUTH_API_KEY;
+        else if (key === AUTH_HEADER_AUTHORIZATION) value = AUTH_BEARER_TOKEN;
+        else if (key === AUTH_HEADER_X_SIGNATURE) value = AUTH_SIGNATURE;
         
         headerMap.set(header.key, value);
       }
@@ -342,10 +359,43 @@ function getHeadersForOperation(request: any, variables: Record<string, string>)
 function extractParameters(request: any, variables: Record<string, string>): any[] {
   const inputParams: any[] = [];
   
-  // Extract URL parameters
+  // Extract path variables from URL path segments (e.g., {{client_id}})
   const url = request.url;
+  if (url?.path) {
+    for (const segment of url.path) {
+      // Match Postman variables like {{client_id}}
+      const match = segment.match(/\{\{([^}]+)\}\}/);
+      if (match) {
+        const varName = match[1];
+        // Path parameters are always required
+        const inputParam: any = {};
+        inputParam[varName] = 'STRING';
+        inputParams.push(inputParam);
+      }
+    }
+  }
+  
+  // Also check raw URL for path variables
+  if (url?.raw) {
+    const pathMatches = url.raw.matchAll(/\{\{([^}]+)\}\}/g);
+    for (const match of pathMatches) {
+      const varName = match[1];
+      // Skip if it's a base URL variable (like {{url}}) or already added
+      if (varName.toLowerCase() !== 'url' && !inputParams.some(p => Object.keys(p)[0] === varName)) {
+        const inputParam: any = {};
+        inputParam[varName] = 'STRING';
+        inputParams.push(inputParam);
+      }
+    }
+  }
+  
+  // Extract URL parameters (Postman's URL variables feature)
   if (url?.variable) {
     for (const variable of url.variable) {
+      // Skip if already added as path variable
+      if (inputParams.some(p => Object.keys(p)[0] === variable.key)) {
+        continue;
+      }
       const isRequired = !variable.disabled;
       const inputParam: any = {};
       if (isRequired) {
@@ -378,6 +428,29 @@ function extractParameters(request: any, variables: Record<string, string>): any
         };
       }
       inputParams.push(inputParam);
+    }
+  }
+  
+  // Extract header parameters (non-auth headers that should be in INPUTS)
+  if (request.header) {
+    for (const header of request.header) {
+      if (header.key && header.value) {
+        const key = header.key.toLowerCase();
+        // Only add non-auth headers to INPUTS (auth headers go to HEADERS)
+        if (key !== AUTH_HEADER_X_API_KEY && key !== AUTH_HEADER_AUTHORIZATION && key !== AUTH_HEADER_X_SIGNATURE && key !== HEADER_CONTENT_TYPE.toLowerCase()) {
+          const isRequired = !header.disabled;
+          const inputParam: any = {};
+          if (isRequired) {
+            inputParam[header.key] = 'STRING';
+          } else {
+            inputParam[header.key] = {
+              TYPE: 'STRING',
+              REQUIRED: false,
+            };
+          }
+          inputParams.push(inputParam);
+        }
+      }
     }
   }
   
@@ -523,7 +596,7 @@ function extractOperations(collection: any, variables: Record<string, string>): 
   
   function processItem(item: any, parentName: string | null = null) {
     if (item.request) {
-      const method = item.request.method || 'GET';
+      const method = item.request.method || HTTP_METHOD_GET;
       const url = item.request.url;
       const path = extractPathFromUrl(url, variables);
       const itemName = item.name || 'unknown';

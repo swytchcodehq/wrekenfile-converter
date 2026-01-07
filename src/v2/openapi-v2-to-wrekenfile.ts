@@ -14,58 +14,27 @@ import {
   TYPE_ANY,
   BODYTYPE_RAW,
   DEFAULT_HTTP_SCHEME,
+  CONTENT_TYPE_JSON,
+  CONTENT_TYPE_FORM_DATA,
+  CONTENT_TYPE_URLENCODED,
+  HEADER_CONTENT_TYPE,
+  HEADER_AUTHORIZATION,
+  AUTH_BEARER_TOKEN,
+  AUTH_BASIC_AUTH,
+  AUTH_TEMPLATE_BEARER_ACCESS,
+  AUTH_TEMPLATE_BASIC,
+  AUTH_TEMPLATE_ID_TOKEN,
+  HTTP_METHODS_WITH_BODY,
 } from './utils/constants';
 import { generateReturnVarName, generateErrorWhen } from './utils/response-utils';
+import { mapOpenApiType, Primitive } from './utils/type-utils';
+import { generateOpenApiSummary } from './utils/summary-utils';
 
-type Primitive = 'STRING' | 'INT' | 'FLOAT' | 'BOOL' | 'TIMESTAMP' | 'DATE' | 'TIME' | 'NULL' | 'UNDEFINED' | 'VOID' | 'ANY' | 'OBJECT';
 const externalRefCache: Record<string, any> = {};
 
-function mapType(type: any, format?: string): Primitive {
-  if (format === 'uuid') return 'STRING'; // UUID is typically a string
-  if (format === 'date-time') return 'TIMESTAMP';
-  if (format === 'date') return 'DATE';
-  if (format === 'time') return 'TIME';
-  if (format === 'binary') return 'STRING'; // File uploads
-  if (typeof type === 'string') {
-    const t = type.toLowerCase();
-    if (t === 'string') return 'STRING';
-    if (t === 'integer' || t === 'int') return 'INT';
-    if (t === 'number') return 'FLOAT';
-    if (t === 'boolean' || t === 'bool') return 'BOOL';
-    if (t === 'null') return 'NULL';
-    return 'ANY';
-  }
-  // Handle array of types (OpenAPI allows type: ['string', 'null'])
-  if (Array.isArray(type) && type.length > 0 && typeof type[0] === 'string') {
-    const t = type[0].toLowerCase();
-    if (t === 'string') return 'STRING';
-    if (t === 'integer' || t === 'int') return 'INT';
-    if (t === 'number') return 'FLOAT';
-    if (t === 'boolean' || t === 'bool') return 'BOOL';
-    return 'ANY';
-  }
-  // Fallback for missing or unexpected type
-  return 'ANY';
-}
-
-function generateSummary(op: any, method: string, path: string): string {
-  if (op.summary) return op.summary;
-  if (op.description) {
-    // Use first sentence of description as summary
-    const firstSentence = op.description.split(/[.!?]\s/)[0];
-    return firstSentence || op.description.substring(0, 100);
-  }
-  if (op.operationId) return `Perform operation ${op.operationId}`;
-  const verb = {
-    get: 'Fetch',
-    post: 'Create',
-    put: 'Update',
-    delete: 'Delete',
-    patch: 'Modify',
-  }[method.toLowerCase()] || 'Call';
-  const entity = path.split('/').filter(p => p && !p.startsWith('{')).pop() || 'resource';
-  return `${verb} ${entity}`;
-}
+// Re-export for backward compatibility
+const mapType = mapOpenApiType;
+const generateSummary = generateOpenApiSummary;
 
 function resolveRef(ref: string, spec: any, baseDir: string): any {
   if (ref.startsWith('#/')) {
@@ -314,32 +283,33 @@ function getContentTypeAndBodyType(op: any, spec: any): { contentType: string; b
   const hasFormData = op.parameters?.some((param: any) => param && typeof param === 'object' && param.in === 'formData');
   
   if (hasFormData) {
-    return { contentType: 'multipart/form-data', bodyType: 'form-data' };
+    return { contentType: CONTENT_TYPE_FORM_DATA, bodyType: 'form-data' };
   }
   
   // OpenAPI v2 determines content type from consumes array or defaults
-  const consumes = op.consumes || spec.consumes || ['application/json'];
-  const contentType = consumes[0] || 'application/json';
+  const consumes = op.consumes || spec.consumes || [CONTENT_TYPE_JSON];
+  const contentType = consumes[0] || CONTENT_TYPE_JSON;
   
-  let bodyType = 'raw';
-  if (contentType === 'multipart/form-data') {
+  let bodyType = BODYTYPE_RAW;
+  if (contentType === CONTENT_TYPE_FORM_DATA) {
     bodyType = 'form-data';
-  } else if (contentType === 'application/x-www-form-urlencoded') {
+  } else if (contentType === CONTENT_TYPE_URLENCODED) {
     bodyType = 'x-www-form-urlencoded';
   }
 
   return { contentType, bodyType };
 }
 
-function getHeadersForOperation(op: any, spec: any): Record<string, string> {
+function getHeadersForOperation(op: any, spec: any, method?: string, baseDir?: string): Record<string, string> {
   const { contentType } = getContentTypeAndBodyType(op, spec);
   
   // Use a Map to prevent duplicate headers
   const headerMap = new Map<string, string>();
   
   // Add Content-Type header for POST/PUT/PATCH requests
-  if (['post', 'put', 'patch'].includes(op.method?.toLowerCase() || '')) {
-    headerMap.set('Content-Type', contentType);
+  const httpMethod = method?.toLowerCase() || op.method?.toLowerCase() || '';
+  if (HTTP_METHODS_WITH_BODY.includes(httpMethod)) {
+    headerMap.set(HEADER_CONTENT_TYPE, contentType);
   }
   
   // Add security headers based on the operation's security requirements
@@ -350,13 +320,13 @@ function getHeadersForOperation(op: any, spec: any): Record<string, string> {
       const scheme = spec.securityDefinitions?.[schemeName]; // OpenAPI v2 uses securityDefinitions
       if (scheme) {
         if (scheme.type === 'basic') {
-          headerMap.set('Authorization', 'basic_auth');
+          headerMap.set(HEADER_AUTHORIZATION, AUTH_BASIC_AUTH);
         } else if (scheme.type === 'apiKey') {
           if (scheme.in === 'header') {
             headerMap.set(scheme.name, scheme.name.toLowerCase());
           }
         } else if (scheme.type === 'oauth2') {
-          headerMap.set('Authorization', 'bearer_token');
+          headerMap.set(HEADER_AUTHORIZATION, AUTH_BEARER_TOKEN);
         }
       }
     }
@@ -364,9 +334,13 @@ function getHeadersForOperation(op: any, spec: any): Record<string, string> {
   
   // Check if Authorization is used as a parameter but not defined in securityDefinitions
   if (op.parameters) {
-    for (const param of op.parameters) {
-      if (param && typeof param === 'object' && param.in === 'header' && param.name === 'Authorization' && !headerMap.has('Authorization')) {
-        headerMap.set('Authorization', 'bearer_token');
+    for (let param of op.parameters) {
+      // Resolve $ref if present
+      if (param && typeof param === 'object' && param.$ref) {
+        param = resolveRef(param.$ref, spec, baseDir || '');
+      }
+      if (param && typeof param === 'object' && param.in === 'header' && param.name === HEADER_AUTHORIZATION && !headerMap.has(HEADER_AUTHORIZATION)) {
+        headerMap.set(HEADER_AUTHORIZATION, AUTH_BEARER_TOKEN);
       }
     }
   }
@@ -398,7 +372,14 @@ function extractParameters(op: any, spec: any, baseDir: string): any[] {
       
       const paramName = param && typeof param === 'object' ? param.name : '';
       const paramSchema = param && typeof param === 'object' ? param.schema || {} : {};
-      const isRequired = param && typeof param === 'object' ? param.required !== false : false;
+      const paramIn = param && typeof param === 'object' ? param.in || 'query' : 'query';
+      
+      // Path parameters are always required in OpenAPI v2
+      // Query and header parameters default to false if not specified
+      const isRequired = paramIn === 'path'
+        ? (param && typeof param === 'object' ? param.required !== false : true)  // Path params default to true
+        : (param && typeof param === 'object' ? param.required === true : false);  // Query/header params default to false
+      const hasDefault = paramSchema && typeof paramSchema === 'object' ? paramSchema.default !== undefined : false;
       
       let type = 'STRING';
       if (param && typeof param === 'object' && param.type) {
@@ -408,18 +389,22 @@ function extractParameters(op: any, spec: any, baseDir: string): any[] {
       }
       
       // Build input parameter in v2.0.1 format
-      if (isRequired) {
-        // Simple form
+      // Use simple form if required and no default, extended form otherwise
+      if (isRequired && !hasDefault) {
+        // Simple form: - paramName: TYPE
         const inputParam: any = {};
         inputParam[paramName] = type;
         inputParams.push(inputParam);
       } else {
-        // Extended form
+        // Extended form: - paramName: { TYPE: ..., REQUIRED: ..., DEFAULT: ... }
         const inputParam: any = {};
         inputParam[paramName] = {
           TYPE: type,
-          REQUIRED: false,
+          REQUIRED: isRequired,
         };
+        if (hasDefault) {
+          inputParam[paramName].DEFAULT = paramSchema.default;
+        }
         inputParams.push(inputParam);
       }
     }
@@ -446,7 +431,8 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
       type = 'ANY';
     }
     
-    const isRequired = bodyParam && typeof bodyParam === 'object' ? bodyParam.required !== false : false;
+    // In OpenAPI v2, body parameters default to false (optional) if not specified
+    const isRequired = bodyParam && typeof bodyParam === 'object' ? bodyParam.required === true : false;
     
     if (isRequired) {
       // Simple form
@@ -469,7 +455,8 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     for (const param of op.parameters) {
       if (param && typeof param === 'object' && param.in === 'formData') {
         const type = param.type === 'file' ? 'STRING' : getTypeFromSchema({ type: param.type, format: param.format }, spec, baseDir);
-        const isRequired = param.required !== false;
+        // FormData parameters default to false (optional) if not specified
+        const isRequired = param.required === true;
         const hasDefault = param.default !== undefined;
         
         const inputParam: any = {};
@@ -678,7 +665,7 @@ function extractMethods(spec: any, baseDir: string): Record<string, any> {
       const opWithMergedParams = { ...op, parameters: allParams };
       
       const { bodyType } = getContentTypeAndBodyType(opWithMergedParams, spec);
-      const headers = getHeadersForOperation(opWithMergedParams, spec);
+      const headers = getHeadersForOperation(opWithMergedParams, spec, method, baseDir);
       const pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, baseDir);
       const bodyParams = extractRequestBody(opWithMergedParams, operationId, method, pathStr, spec, baseDir);
       const inputParams = [...pathQueryHeaderParams, ...bodyParams];
@@ -747,7 +734,7 @@ function extractSecurityDefaults(spec: any): Record<string, string> {
   
   for (const [name, scheme] of Object.entries<any>(securityDefinitions)) {
     if (scheme && typeof scheme === 'object' && scheme.type === 'basic') {
-      defs.basic_auth = 'Basic <BASE64>';
+      defs.basic_auth = AUTH_TEMPLATE_BASIC;
     } else if (scheme && typeof scheme === 'object' && scheme.type === 'apiKey') {
       if (scheme.in === 'header') {
         defs[scheme.name.toLowerCase()] = `<${scheme.name.toUpperCase()}>`;
@@ -757,7 +744,7 @@ function extractSecurityDefaults(spec: any): Record<string, string> {
         defs[`cookie_${scheme.name.toLowerCase()}`] = `<${scheme.name.toUpperCase()}>`;
       }
     } else if (scheme && typeof scheme === 'object' && scheme.type === 'oauth2') {
-      defs.bearer_token = 'BEARER <ACCESS_TOKEN>';
+      defs.bearer_token = AUTH_TEMPLATE_BEARER_ACCESS;
     }
   }
   
@@ -801,26 +788,9 @@ function generateWrekenfile(spec: any, baseDir: string): string {
     wrekenfile.STRUCTS = structs;
   }
 
-  let yamlString = dump(wrekenfile, {
-    indent: 2,
-    lineWidth: -1,
-    noRefs: true,
-    sortKeys: false,
-    quotingType: '"',
-    forceQuotes: false,
-  });
+  let yamlString = dump(wrekenfile, YAML_DUMP_OPTIONS);
 
-  // Post-process to remove quotes from type strings
-  // Remove quotes from STRUCT(...) values
-  yamlString = yamlString.replace(/(TYPE|RETURNTYPE):\s*"STRUCT\(([^)]+)\)"/g, '$1: STRUCT($2)');
-  // Remove quotes from array types - use YAML block scalar syntax (|-) to avoid quotes
-  // YAML requires quotes for values starting with [], so we use block scalar format
-  // Handle both regular lines and array items (lines starting with -)
-  yamlString = yamlString.replace(/^(\s+)(-?\s*)(TYPE|RETURNTYPE):\s*['"](\[\]STRUCT\([^)]+\)|\[\][A-Z]+)['"]/gm, (match, indent, arrayPrefix, key, value) => {
-    // Use block scalar format: key: |-\n  value (requires newline after |-)
-    return `${indent}${arrayPrefix}${key}: |-\n${indent}${arrayPrefix.replace(/-/, ' ')}  ${value}`;
-  });
-
+  yamlString = removeTypeQuotes(yamlString);
   yamlString = cleanYaml(yamlString);
   checkYamlForHiddenChars(yamlString);
   validateYaml(yamlString);
