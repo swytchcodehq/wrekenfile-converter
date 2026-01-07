@@ -30,6 +30,7 @@ import {
 } from './utils/constants';
 import { generateReturnVarName, generateErrorWhen } from './utils/response-utils';
 import { Primitive } from './utils/type-utils';
+import { validatePostmanCollection, logError, createConverterError } from './utils/error-utils';
 
 function mapType(value: any): Primitive {
   if (typeof value === 'string') {
@@ -358,62 +359,19 @@ function getHeadersForOperation(request: any, variables: Record<string, string>)
 function extractParameters(request: any, variables: Record<string, string>): any[] {
   const inputParams: any[] = [];
   
-  // Extract path variables from URL path segments (e.g., {{client_id}})
+  // Path variables are already in ENDPOINT (e.g., /users/{userId})
+  // Header parameters are in HTTP.HEADERS
+  // Only extract query parameters here
+  
   const url = request.url;
-  if (url?.path) {
-    for (const segment of url.path) {
-      // Match Postman variables like {{client_id}}
-      const match = segment.match(/\{\{([^}]+)\}\}/);
-      if (match) {
-        const varName = match[1];
-        // Path parameters are always required
-        const inputParam: any = {};
-        inputParam[varName] = 'STRING';
-        inputParams.push(inputParam);
-      }
-    }
-  }
   
-  // Also check raw URL for path variables
-  if (url?.raw) {
-    const pathMatches = url.raw.matchAll(/\{\{([^}]+)\}\}/g);
-    for (const match of pathMatches) {
-      const varName = match[1];
-      // Skip if it's a base URL variable (like {{url}}) or already added
-      if (varName.toLowerCase() !== 'url' && !inputParams.some(p => Object.keys(p)[0] === varName)) {
-        const inputParam: any = {};
-        inputParam[varName] = 'STRING';
-        inputParams.push(inputParam);
-      }
-    }
-  }
-  
-  // Extract URL parameters (Postman's URL variables feature)
-  if (url?.variable) {
-    for (const variable of url.variable) {
-      // Skip if already added as path variable
-      if (inputParams.some(p => Object.keys(p)[0] === variable.key)) {
-        continue;
-      }
-      const isRequired = !variable.disabled;
-      const inputParam: any = {};
-      if (isRequired) {
-        // Simple form
-        inputParam[variable.key] = 'STRING';
-      } else {
-        // Extended form
-        inputParam[variable.key] = {
-          TYPE: 'STRING',
-          REQUIRED: false,
-        };
-      }
-      inputParams.push(inputParam);
-    }
-  }
-  
-  // Extract query parameters
+  // Extract query parameters only
   if (url?.query) {
     for (const query of url.query) {
+      // Skip disabled query parameters
+      if (query.disabled) {
+        continue;
+      }
       const isRequired = !query.disabled;
       const inputParam: any = {};
       if (isRequired) {
@@ -430,28 +388,10 @@ function extractParameters(request: any, variables: Record<string, string>): any
     }
   }
   
-  // Extract header parameters (non-auth headers that should be in INPUTS)
-  if (request.header) {
-    for (const header of request.header) {
-      if (header.key && header.value) {
-        const key = header.key.toLowerCase();
-        // Only add non-auth headers to INPUTS (auth headers go to HEADERS)
-        if (key !== AUTH_HEADER_X_API_KEY && key !== AUTH_HEADER_AUTHORIZATION && key !== AUTH_HEADER_X_SIGNATURE && key !== HEADER_CONTENT_TYPE.toLowerCase()) {
-          const isRequired = !header.disabled;
-          const inputParam: any = {};
-          if (isRequired) {
-            inputParam[header.key] = 'STRING';
-          } else {
-            inputParam[header.key] = {
-              TYPE: 'STRING',
-              REQUIRED: false,
-            };
-          }
-          inputParams.push(inputParam);
-        }
-      }
-    }
-  }
+  // Note: Path variables ({{var}} in URL) are NOT added to INPUTS
+  // They're already represented in the ENDPOINT as {var}
+  // Header parameters are NOT added to INPUTS
+  // They're in HTTP.HEADERS
   
   return inputParams;
 }
@@ -758,71 +698,100 @@ function extractBaseUrl(collection: any, variables: Record<string, string>): str
 }
 
 function generateWrekenfile(collection: any, variables: Record<string, string>): string {
-  if (!collection || typeof collection !== 'object') {
-    throw new Error("Argument 'collection' is required and must be an object");
-  }
-  if (!variables || typeof variables !== 'object') {
-    throw new Error("Argument 'variables' is required and must be an object");
-  }
-  
-  // Extract base URL from collection
-  const baseUrl = extractBaseUrl(collection, variables);
-  
-  // Merge collection variables with passed variables
-  const collectionVars = extractCollectionVariables(collection);
-  const allVariables = { ...collectionVars, ...variables };
-  
-  const structs = extractStructs(collection, allVariables);
-  const operations = extractOperations(collection, allVariables);
-  
-  const wrekenfile: any = {
-    VERSION: WREKENFILE_VERSION,
-  };
+  try {
+    // Validate inputs
+    validatePostmanCollection(collection);
+    
+    if (!variables || typeof variables !== 'object') {
+      throw createConverterError(
+        "Argument 'variables' is required and must be an object",
+        "INVALID_VARIABLES",
+        { variablesType: typeof variables }
+      );
+    }
+    
+    // Extract base URL from collection
+    const baseUrl = extractBaseUrl(collection, variables);
+    
+    // Merge collection variables with passed variables
+    const collectionVars = extractCollectionVariables(collection);
+    const allVariables = { ...collectionVars, ...variables };
+    
+    const structs = extractStructs(collection, allVariables);
+    const operations = extractOperations(collection, allVariables);
+    
+    const wrekenfile: any = {
+      VERSION: WREKENFILE_VERSION,
+    };
 
-  // Add DEFAULTS if we have any
-  const defaults: Record<string, string> = {};
-  
-  // Add base URL first
-  defaults.w_base_url = baseUrl;
-  
-  // Add other variables
-  if (Object.keys(allVariables).length > 0) {
-    for (const [key, value] of Object.entries(allVariables)) {
-      // Skip base URL variables as we've already added w_base_url
-      if (BASE_URL_VARIABLE_NAMES.includes(key)) {
-        continue;
-      }
-      const isSensitive = SENSITIVE_KEYS.some(sensitiveKey => key.toLowerCase().includes(sensitiveKey));
-      if (isSensitive) {
-        defaults[key] = `{{${key}}}`;
-      } else {
-        // Ensure value is a string for DEFAULTS section
-        if (value !== undefined && value !== null) {
-          defaults[key] = String(value);
+    // Add DEFAULTS if we have any
+    const defaults: Record<string, string> = {};
+    
+    // Add base URL first
+    defaults.w_base_url = baseUrl;
+    
+    // Add other variables
+    if (Object.keys(allVariables).length > 0) {
+      for (const [key, value] of Object.entries(allVariables)) {
+        // Skip base URL variables as we've already added w_base_url
+        if (BASE_URL_VARIABLE_NAMES.includes(key)) {
+          continue;
+        }
+        const isSensitive = SENSITIVE_KEYS.some(sensitiveKey => key.toLowerCase().includes(sensitiveKey));
+        if (isSensitive) {
+          defaults[key] = `{{${key}}}`;
+        } else {
+          // Ensure value is a string for DEFAULTS section
+          if (value !== undefined && value !== null) {
+            defaults[key] = String(value);
+          }
         }
       }
     }
-  }
-  
-  if (Object.keys(defaults).length > 0) {
-    wrekenfile.DEFAULTS = defaults;
-  }
+    
+    if (Object.keys(defaults).length > 0) {
+      wrekenfile.DEFAULTS = defaults;
+    }
 
-  // Add METHODS (mandatory)
-  const methods: Record<string, any> = {};
-  for (const operation of operations) {
-    const { name, ...methodDef } = operation;
-    methods[name] = methodDef;
-  }
-  wrekenfile.METHODS = methods;
+    // Add METHODS (mandatory)
+    const methods: Record<string, any> = {};
+    for (const operation of operations) {
+      const { name, ...methodDef } = operation;
+      methods[name] = methodDef;
+    }
+    wrekenfile.METHODS = methods;
 
-  // Add STRUCTS if we have any
-  if (Object.keys(structs).length > 0) {
-    wrekenfile.STRUCTS = structs;
-  }
+    // Add STRUCTS if we have any
+    if (Object.keys(structs).length > 0) {
+      wrekenfile.STRUCTS = structs;
+    }
 
-  // Generate YAML string using the standard pipeline
-  return generateYamlString(wrekenfile);
+    // Generate YAML string using the standard pipeline
+    return generateYamlString(wrekenfile);
+  } catch (err: any) {
+    // Log error with context
+    logError(err, {
+      converter: 'postman-to-wrekenfile',
+      collectionName: collection?.info?.name || 'unknown',
+      collectionSchema: collection?.info?.schema || 'unknown'
+    });
+    
+    // Re-throw with additional context if it's not already a ConverterError
+    if (err.code && (err.code.startsWith('INVALID_') || err.code.startsWith('MISSING_') || err.code.startsWith('EMPTY_'))) {
+      throw err;
+    }
+    
+    throw createConverterError(
+      `Failed to generate Wrekenfile from Postman collection: ${err.message}`,
+      "GENERATION_FAILED",
+      {
+        converter: 'postman-to-wrekenfile',
+        collectionName: collection?.info?.name || 'unknown',
+        collectionSchema: collection?.info?.schema || 'unknown'
+      },
+      err
+    );
+  }
 }
 
 export {

@@ -29,6 +29,7 @@ import {
 import { generateReturnVarName, generateErrorWhen } from './utils/response-utils';
 import { mapOpenApiType, Primitive } from './utils/type-utils';
 import { generateOpenApiSummary } from './utils/summary-utils';
+import { validateOpenApiV2Spec, validateBaseDir, logError, createConverterError } from './utils/error-utils';
 
 const externalRefCache: Record<string, any> = {};
 
@@ -37,18 +38,81 @@ const mapType = mapOpenApiType;
 const generateSummary = generateOpenApiSummary;
 
 function resolveRef(ref: string, spec: any, baseDir: string): any {
+  if (!ref || typeof ref !== 'string') {
+    throw createConverterError(
+      `Invalid $ref: must be a non-empty string`,
+      "INVALID_REF",
+      { ref, refType: typeof ref }
+    );
+  }
+
   if (ref.startsWith('#/')) {
-    return ref.split('/').slice(1).reduce((o, k) => o?.[k], spec);
+    const pathParts = ref.split('/').slice(1);
+    let result = spec;
+    for (const part of pathParts) {
+      if (result === undefined || result === null) {
+        throw createConverterError(
+          `Failed to resolve $ref: ${ref} - path segment '${part}' not found`,
+          "REF_RESOLUTION_FAILED",
+          { ref, pathParts, currentPath: pathParts.slice(0, pathParts.indexOf(part) + 1) }
+        );
+      }
+      result = result[part];
+    }
+    return result;
   }
+
   const [filePath, internal] = ref.split('#');
-  const fullPath = path.resolve(baseDir, filePath);
-  if (!externalRefCache[fullPath]) {
-    const content = fs.readFileSync(fullPath, 'utf8');
-    externalRefCache[fullPath] = load(content);
+  if (!filePath) {
+    throw createConverterError(
+      `Invalid external $ref: missing file path in ${ref}`,
+      "INVALID_EXTERNAL_REF",
+      { ref }
+    );
   }
-  return internal
-    ? internal.split('/').slice(1).reduce((o, k) => o?.[k], externalRefCache[fullPath])
-    : externalRefCache[fullPath];
+
+  const fullPath = path.resolve(baseDir, filePath);
+  if (!fs.existsSync(fullPath)) {
+    throw createConverterError(
+      `External $ref file not found: ${fullPath}`,
+      "EXTERNAL_REF_FILE_NOT_FOUND",
+      { ref, filePath, baseDir, fullPath }
+    );
+  }
+
+  try {
+    if (!externalRefCache[fullPath]) {
+      const content = fs.readFileSync(fullPath, 'utf8');
+      externalRefCache[fullPath] = load(content);
+    }
+    
+    if (internal) {
+      const internalPath = internal.split('/').slice(1);
+      let result = externalRefCache[fullPath];
+      for (const part of internalPath) {
+        if (result === undefined || result === null) {
+          throw createConverterError(
+            `Failed to resolve internal $ref: ${internal} in file ${fullPath}`,
+            "INTERNAL_REF_RESOLUTION_FAILED",
+            { ref, internal, filePath, internalPath }
+          );
+        }
+        result = result[part];
+      }
+      return result;
+    }
+    return externalRefCache[fullPath];
+  } catch (err: any) {
+    if (err.code && err.code.startsWith('REF_')) {
+      throw err;
+    }
+    throw createConverterError(
+      `Error loading external $ref file: ${fullPath}`,
+      "EXTERNAL_REF_LOAD_ERROR",
+      { ref, filePath, fullPath },
+      err
+    );
+  }
 }
 
 function getTypeFromSchema(schema: any, spec: any, baseDir: string): string {
@@ -357,7 +421,10 @@ function getHeadersForOperation(op: any, spec: any, method?: string, baseDir?: s
 function extractParameters(op: any, spec: any, baseDir: string): any[] {
   const inputParams: any[] = [];
   
-  // Handle path, query, and header parameters
+  // Handle query parameters only
+  // Path parameters are already in ENDPOINT (e.g., /users/{userId})
+  // Header parameters are in HTTP.HEADERS
+  // Body and formData parameters are handled in extractRequestBody
   if (op.parameters) {
     for (let param of op.parameters) {
       // Resolve parameter references
@@ -370,15 +437,28 @@ function extractParameters(op: any, spec: any, baseDir: string): any[] {
         continue;
       }
       
-      const paramName = param && typeof param === 'object' ? param.name : '';
-      const paramSchema = param && typeof param === 'object' ? param.schema || {} : {};
       const paramIn = param && typeof param === 'object' ? param.in || 'query' : 'query';
       
-      // Path parameters are always required in OpenAPI v2
-      // Query and header parameters default to false if not specified
-      const isRequired = paramIn === 'path'
-        ? (param && typeof param === 'object' ? param.required !== false : true)  // Path params default to true
-        : (param && typeof param === 'object' ? param.required === true : false);  // Query/header params default to false
+      // Skip path parameters - they're already in the ENDPOINT
+      if (paramIn === 'path') {
+        continue;
+      }
+      
+      // Skip header parameters - they're in HTTP.HEADERS
+      if (paramIn === 'header') {
+        continue;
+      }
+      
+      // Only process query parameters
+      if (paramIn !== 'query') {
+        continue;
+      }
+      
+      const paramName = param && typeof param === 'object' ? param.name : '';
+      const paramSchema = param && typeof param === 'object' ? param.schema || {} : {};
+      
+      // Query parameters default to false if not specified
+      const isRequired = param && typeof param === 'object' ? param.required === true : false;
       const hasDefault = paramSchema && typeof paramSchema === 'object' ? paramSchema.default !== undefined : false;
       
       let type = 'STRING';
@@ -762,36 +842,60 @@ function extractSecurityDefaults(spec: any): Record<string, string> {
 
 
 function generateWrekenfile(spec: any, baseDir: string): string {
-  if (!spec || typeof spec !== 'object') {
-    throw new Error("Argument 'spec' is required and must be an object");
+  try {
+    // Validate inputs
+    validateOpenApiV2Spec(spec);
+    validateBaseDir(baseDir);
+
+    const defaults = extractSecurityDefaults(spec);
+    const methods = extractMethods(spec, baseDir);
+    const structs = extractStructs(spec, baseDir);
+
+    const wrekenfile: any = {
+      VERSION: WREKENFILE_VERSION,
+    };
+
+    // Add DEFAULTS if we have any
+    if (Object.keys(defaults).length > 0) {
+      wrekenfile.DEFAULTS = defaults;
+    }
+
+    // Add METHODS (mandatory)
+    wrekenfile.METHODS = methods;
+
+    // Add STRUCTS if we have any
+    if (Object.keys(structs).length > 0) {
+      wrekenfile.STRUCTS = structs;
+    }
+
+    // Generate YAML string using the standard pipeline
+    return generateYamlString(wrekenfile);
+  } catch (err: any) {
+    // Log error with context
+    logError(err, {
+      converter: 'openapi-v2-to-wrekenfile',
+      baseDir,
+      specInfo: spec?.info?.title || 'unknown',
+      specVersion: spec?.swagger || 'unknown'
+    });
+    
+    // Re-throw with additional context if it's not already a ConverterError
+    if (err.code && (err.code.startsWith('INVALID_') || err.code.startsWith('MISSING_'))) {
+      throw err;
+    }
+    
+    throw createConverterError(
+      `Failed to generate Wrekenfile from OpenAPI v2 spec: ${err.message}`,
+      "GENERATION_FAILED",
+      {
+        converter: 'openapi-v2-to-wrekenfile',
+        baseDir,
+        specInfo: spec?.info?.title || 'unknown',
+        specVersion: spec?.swagger || 'unknown'
+      },
+      err
+    );
   }
-  if (!baseDir || typeof baseDir !== 'string') {
-    throw new Error("Argument 'baseDir' is required and must be a string");
-  }
-
-  const defaults = extractSecurityDefaults(spec);
-  const methods = extractMethods(spec, baseDir);
-  const structs = extractStructs(spec, baseDir);
-
-  const wrekenfile: any = {
-    VERSION: WREKENFILE_VERSION,
-  };
-
-  // Add DEFAULTS if we have any
-  if (Object.keys(defaults).length > 0) {
-    wrekenfile.DEFAULTS = defaults;
-  }
-
-  // Add METHODS (mandatory)
-  wrekenfile.METHODS = methods;
-
-  // Add STRUCTS if we have any
-  if (Object.keys(structs).length > 0) {
-    wrekenfile.STRUCTS = structs;
-  }
-
-  // Generate YAML string using the standard pipeline
-  return generateYamlString(wrekenfile);
 }
 
 // Export for programmatic use

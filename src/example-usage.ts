@@ -38,43 +38,57 @@ function exampleUsageV1() {
 function exampleUsageV2() {
   console.log('=== Wrekenfile v2 Examples ===');
   
-  // OpenAPI v3 example (v2)
-  const openapiContent = fs.readFileSync('./examples/3n.yaml', 'utf8');
-  const openapiSpec = yaml.load(openapiContent);
-  const wrekenfileYaml = v2.generateWrekenfile(openapiSpec, './examples');
-  console.log('OpenAPI v3 to Wrekenfile (v2):', wrekenfileYaml.slice(0, 200) + '...');
+  try {
+    // OpenAPI v3 example (v2)
+    const openapiContent = fs.readFileSync('./examples/3n.yaml', 'utf8');
+    const openapiSpec = yaml.load(openapiContent);
+    const wrekenfileYaml = v2.generateWrekenfile(openapiSpec, './examples');
+    console.log('OpenAPI v3 to Wrekenfile (v2):', wrekenfileYaml.slice(0, 200) + '...');
+    const parsed = yaml.load(wrekenfileYaml) as any;
+    console.log('  Generated:', Object.keys(parsed.METHODS || {}).length, 'methods');
 
-  // OpenAPI v2 (Swagger) example (v2)
-  const openapiV2Content = fs.readFileSync('./examples/5n_v2.yaml', 'utf8');
-  const openapiV2Spec = yaml.load(openapiV2Content);
-  const wrekenfileV2Yaml = v2.generateWrekenfileV2(openapiV2Spec, './examples');
-  console.log('OpenAPI v2 to Wrekenfile (v2):', wrekenfileV2Yaml.slice(0, 200) + '...');
+    // OpenAPI v2 (Swagger) example (v2)
+    const openapiV2Content = fs.readFileSync('./examples/5n_v2.yaml', 'utf8');
+    const openapiV2Spec = yaml.load(openapiV2Content);
+    const wrekenfileV2Yaml = v2.generateWrekenfileV2(openapiV2Spec, './examples');
+    console.log('OpenAPI v2 to Wrekenfile (v2):', wrekenfileV2Yaml.slice(0, 200) + '...');
+    const parsedV2 = yaml.load(wrekenfileV2Yaml) as any;
+    console.log('  Generated:', Object.keys(parsedV2.METHODS || {}).length, 'methods');
 
-  // Postman example (v2)
-  const postmanContent = fs.readFileSync('./examples/Nium APIpostman_collection.json', 'utf8');
-  const postmanCollection = JSON.parse(postmanContent);
-  const wrekenfileFromPostman = v2.generateWrekenfileFromPostman(postmanCollection, {});
-  console.log('Postman to Wrekenfile (v2):', wrekenfileFromPostman.slice(0, 200) + '...');
+    // Postman example (v2)
+    const postmanContent = fs.readFileSync('./examples/Nium APIpostman_collection.json', 'utf8');
+    const postmanCollection = JSON.parse(postmanContent);
+    const wrekenfileFromPostman = v2.generateWrekenfileFromPostman(postmanCollection, {});
+    console.log('Postman to Wrekenfile (v2):', wrekenfileFromPostman.slice(0, 200) + '...');
+    const parsedPostman = yaml.load(wrekenfileFromPostman) as any;
+    console.log('  Generated:', Object.keys(parsedPostman.METHODS || {}).length, 'methods');
 
-  // Mini Wrekenfiles (v2) - supports both HTTP and SDK methods
-  fs.writeFileSync('./Wrekenfile_v2.yaml', wrekenfileYaml);
-  const miniFiles = generateMiniWrekenfilesV2(wrekenfileYaml);
-  console.log('Mini Wrekenfiles count (v2):', miniFiles.length);
-  if (miniFiles.length > 0) {
-    const firstMini = miniFiles[0];
-    console.log('First mini Wrekenfile (v2):', firstMini.content.slice(0, 200) + '...');
-    console.log('  Metadata:', {
-      endpoint: firstMini.metadata.endpoint,
-      interface: firstMini.metadata.interface,
-      source: firstMini.metadata.source,
-      methods: firstMini.metadata.methods,
-      structs: firstMini.metadata.structs
-    });
+    // Mini Wrekenfiles (v2) - supports both HTTP and SDK methods
+    fs.writeFileSync('./Wrekenfile_v2.yaml', wrekenfileYaml);
+    const miniFiles = generateMiniWrekenfilesV2(wrekenfileYaml);
+    console.log('Mini Wrekenfiles count (v2):', miniFiles.length);
+    if (miniFiles.length > 0) {
+      const firstMini = miniFiles[0];
+      console.log('First mini Wrekenfile (v2):', firstMini.content.slice(0, 200) + '...');
+      console.log('  Metadata:', {
+        endpoint: firstMini.metadata.endpoint,
+        interface: firstMini.metadata.interface,
+        source: firstMini.metadata.source,
+        methods: firstMini.metadata.methods,
+        structs: firstMini.metadata.structs
+      });
+    }
+
+    // Validation
+    const validation = validateWrekenfile('./Wrekenfile_v2.yaml');
+    console.log('Validation result:', validation.isValid, validation.errors, validation.warnings);
+  } catch (err: any) {
+    console.error('Error in v2 examples:', err.message);
+    if (err.code) {
+      console.error('  Error code:', err.code);
+    }
+    throw err;
   }
-
-  // Validation
-  const validation = validateWrekenfile('./Wrekenfile_v2.yaml');
-  console.log('Validation result:', validation.isValid, validation.errors, validation.warnings);
 }
 
 function exampleUsage() {

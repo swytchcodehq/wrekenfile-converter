@@ -10,8 +10,9 @@ Generated Wrekenfiles are compliant with the [**Wreken Specification v2.0.1**](.
 - **Multi-format Support**: Convert OpenAPI v2 (Swagger), OpenAPI v3, and Postman collections
 - **Wrekenfile v2.0.1 Compliant**: Generates Wrekenfiles compliant with the Wreken Specification v2.0.1 (latest)
 - **Complete Response Handling**: All response types (success and error) included in `RETURNS` arrays
-- **Custom Headers Support**: Custom headers are automatically added to `INPUTS` section for dynamic values
+- **Proper Parameter Structure**: Path parameters in `ENDPOINT`, header parameters in `HTTP.HEADERS`, query and body parameters in `INPUTS`
 - **Authentication Handling**: Auth headers (Authorization, X-API-Key, etc.) are properly mapped to `HEADERS` with placeholder values
+- **Comprehensive Error Handling**: Detailed error messages with context and error codes for invalid inputs
 - **AI-Optimized**: Response structs explicitly referenced for easy AI consumption
 - **Mini Wrekenfile Generation**: Create focused, endpoint-grouped chunks for vector DB storage
 - **TypeScript Support**: Full TypeScript definitions and exports
@@ -128,15 +129,27 @@ const miniFiles: MiniWrekenfile[] = generateMiniWrekenfiles('./Wrekenfile.yaml')
 // Each miniFile contains { content, metadata }
 ```
 
-## How Headers Are Handled
+## Parameter Structure
 
-The converter intelligently handles different types of headers:
+The converter properly structures parameters according to the Wrekenfile specification:
 
-- **Authentication Headers** (e.g., `Authorization`, `X-API-Key`, `X-Signature`): Added to the `HEADERS` section with placeholder values like `bearer_token`, `api_key`, etc.
-- **Custom Headers** (e.g., `X-Request-Id`, `X-Client-Version`): Added to the `INPUTS` section as dynamic parameters that callers must provide
-- **Content-Type**: Automatically added to `HEADERS` for POST/PUT/PATCH requests based on the request body type
+- **Path Parameters** (e.g., `/users/{userId}`): Included in the `ENDPOINT` field only, not in `INPUTS`
+- **Header Parameters** (e.g., `Authorization`, `X-Request-Id`): Included in `HTTP.HEADERS` only, not in `INPUTS`
+- **Query Parameters**: Included in `INPUTS` section
+- **Body Parameters**: Included in `INPUTS` section (e.g., `body: STRUCT(RequestType)`)
 
-This ensures that static authentication headers are properly templated while custom headers remain flexible for callers to provide.
+This ensures proper separation of concerns and follows the Wrekenfile specification correctly.
+
+## Error Handling
+
+The converters include comprehensive error handling with detailed error messages:
+
+- **Validation Errors**: Invalid specifications are caught early with descriptive error messages
+- **Error Codes**: Structured error codes (e.g., `INVALID_SPEC_TYPE`, `MISSING_OPENAPI_VERSION`) for programmatic handling
+- **Context Logging**: Errors include full context (spec title, version, file paths, etc.) for debugging
+- **Stack Traces**: Full stack traces are logged for development and debugging
+
+All errors are logged to the console with timestamps and context information.
 
 ## CLI Tools
 
