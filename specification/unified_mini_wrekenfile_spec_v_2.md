@@ -20,7 +20,7 @@ This spec is intentionally minimal but **semantically complete** at the executio
 ## Versioning
 
 ```yaml
-VERSION: 2.0-mini
+VERSION: 2.0.2
 ```
 
 ---
