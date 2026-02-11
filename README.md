@@ -133,7 +133,30 @@ const miniFiles: MiniWrekenfile[] = generateMiniWrekenfiles(wrekenfileYaml);
 // One mini-wrekenfile is generated per method (standalone, execution-complete)
 ```
 
-**Note**: Mini-wrekenfiles are now **standalone and execution-complete**, meaning each mini-wrekenfile contains all necessary information (HTTP details, SDK details, structs, inputs with LOCATION, returns, errors) for an LLM to generate execution code without external references. They follow the [Unified Mini-Wrekenfile Specification v2.0](./src/v2/unified_mini_wrekenfile_spec_v_2.md).
+**Note**: Mini-wrekenfiles are now **standalone and execution-complete**, meaning each mini-wrekenfile contains all necessary information (HTTP details, SDK details, structs, inputs with LOCATION, returns, errors) for an LLM to generate execution code without external references. They follow the [Unified Mini-Wrekenfile Specification v2.0](./specification/unified_mini_wrekenfile_spec_v_2.md).
+
+## CANONICAL_ID (Stable Method Identifier)
+
+Generated Wrekenfiles include a `CANONICAL_ID` field on each entry under `METHODS`. This gives every method a **stable, semantic identifier** without breaking backward compatibility with the existing method keys.
+
+- **Where it lives**: `METHODS.<methodKey>.CANONICAL_ID`
+- **Format**: `<namespace>.<resource>.<action>` (example: `api.cluster.get`)
+- **Deterministic**: derived from `HTTP.METHOD` + `HTTP.ENDPOINT` (no LLM)
+- **No path params**: `{id}` etc. are excluded from the identifier
+- **Collision-safe**: if two methods would produce the same canonical ID, the generator deterministically expands or appends a short hash to keep IDs unique
+
+Example:
+
+```yaml
+METHODS:
+  get--api-clusters--id-:
+    CANONICAL_ID: api.cluster.get
+    HTTP:
+      METHOD: GET
+      ENDPOINT: /api/clusters/{id}
+```
+
+The full deterministic spec (for re-implementing in SDKs/other languages) is documented in [`specification/canonical_id.md`](./specification/canonical_id.md).
 
 ## Parameter Structure
 
