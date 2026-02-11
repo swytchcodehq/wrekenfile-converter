@@ -21,6 +21,7 @@ export interface MiniWrekenfile {
     methods: string[];
     structs: string[];
     filename: string;
+    canonicalId?: string;
   };
 }
 
@@ -44,21 +45,22 @@ export function generateMiniWrekenfiles(wrekenfileContent: string): MiniWrekenfi
   }
 
   // v2.0.2-mini: One mini-wrekenfile per method (not grouped)
+  // CANONICAL_ID is already set in the main Wrekenfile METHODS
   const miniWrekenfiles: MiniWrekenfile[] = [];
-  
   for (const [methodId, methodData] of Object.entries(data.METHODS)) {
-    miniWrekenfiles.push(createMiniWrekenfile(data, methodId, methodData));
+    const canonicalId = methodData.CANONICAL_ID;
+    miniWrekenfiles.push(createMiniWrekenfile(data, methodId, methodData, canonicalId));
   }
-  
   return miniWrekenfiles;
 }
 
 // v2.0.2-mini: No grouping needed - one mini-wrekenfile per method
 
 function createMiniWrekenfile(
-  data: WrekenfileData, 
-  methodId: string, 
-  methodData: any
+  data: WrekenfileData,
+  methodId: string,
+  methodData: any,
+  canonicalId?: string
 ): MiniWrekenfile {
   // Unified Mini-Wrekenfile v2.0.2: Execution-complete structure
   const miniData: any = {
@@ -69,7 +71,9 @@ function createMiniWrekenfile(
     },
   };
 
-  // Add DESC if available
+  if (canonicalId) {
+    miniData.METHOD.CANONICAL_ID = canonicalId;
+  }
   if (methodData.DESC) {
     miniData.METHOD.DESC = methodData.DESC;
   }
@@ -209,7 +213,9 @@ function createMiniWrekenfile(
     structs: Object.keys(requiredStructs),
     filename: generateFilename(methodId, methodData),
   };
-
+  if (canonicalId) {
+    metadata.canonicalId = canonicalId;
+  }
   if (methodData.HTTP?.ENDPOINT) {
     metadata.endpoint = methodData.HTTP.ENDPOINT;
   }

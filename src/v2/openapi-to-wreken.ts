@@ -33,6 +33,7 @@ import { generateReturnVarName, generateErrorWhen } from './utils/response-utils
 import { mapOpenApiType, Primitive } from './utils/type-utils';
 import { generateOpenApiSummary } from './utils/summary-utils';
 import { validateOpenApiV3Spec, validateBaseDir, logError, createConverterError } from './utils/error-utils';
+import { resolveCanonicalIds, type MethodCanonicalInput } from './utils/canonical-id';
 
 const externalRefCache: Record<string, any> = {};
 
@@ -915,6 +916,25 @@ function generateWrekenfile(spec: any, baseDir: string): string {
     const defaults = extractSecurityDefaults(spec);
     const methods = extractMethods(spec, baseDir);
     const structs = extractStructs(spec, baseDir);
+
+    // Resolve canonical IDs for all methods
+    const canonicalInputs: MethodCanonicalInput[] = Object.entries(methods).map(
+      ([methodId, methodData]) => ({
+        methodId,
+        httpMethod: methodData.HTTP?.METHOD,
+        endpoint: methodData.HTTP?.ENDPOINT,
+        existingCanonicalId: methodData.CANONICAL_ID,
+      })
+    );
+    const canonicalIdMap = resolveCanonicalIds(canonicalInputs);
+
+    // Add CANONICAL_ID to each method
+    for (const [methodId, methodData] of Object.entries(methods)) {
+      const canonicalId = canonicalIdMap.get(methodId);
+      if (canonicalId) {
+        methodData.CANONICAL_ID = canonicalId;
+      }
+    }
 
   const wrekenfile: any = {
     VERSION: WREKENFILE_VERSION,

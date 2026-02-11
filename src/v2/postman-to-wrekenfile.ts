@@ -31,6 +31,7 @@ import {
 import { generateReturnVarName, generateErrorWhen } from './utils/response-utils';
 import { Primitive } from './utils/type-utils';
 import { validatePostmanCollection, logError, createConverterError } from './utils/error-utils';
+import { resolveCanonicalIds, type MethodCanonicalInput } from './utils/canonical-id';
 
 function mapType(value: any): Primitive {
   if (typeof value === 'string') {
@@ -852,6 +853,26 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
       const { name, ...methodDef } = operation;
       methods[name] = methodDef;
     }
+
+    // Resolve canonical IDs for all methods
+    const canonicalInputs: MethodCanonicalInput[] = Object.entries(methods).map(
+      ([methodId, methodData]) => ({
+        methodId,
+        httpMethod: methodData.HTTP?.METHOD,
+        endpoint: methodData.HTTP?.ENDPOINT,
+        existingCanonicalId: methodData.CANONICAL_ID,
+      })
+    );
+    const canonicalIdMap = resolveCanonicalIds(canonicalInputs);
+
+    // Add CANONICAL_ID to each method
+    for (const [methodId, methodData] of Object.entries(methods)) {
+      const canonicalId = canonicalIdMap.get(methodId);
+      if (canonicalId) {
+        methodData.CANONICAL_ID = canonicalId;
+      }
+    }
+
     wrekenfile.METHODS = methods;
 
     // Add STRUCTS if we have any

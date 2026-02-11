@@ -21,3 +21,10 @@ export {
 
 // Export mini Wrekenfile generator
 export { generateMiniWrekenfiles, saveMiniWrekenfiles, MiniWrekenfile } from './mini-wrekenfile-generator';
+
+// Export canonical ID utilities (deterministic method naming)
+export {
+  computeCanonicalId,
+  resolveCanonicalIds,
+  type MethodCanonicalInput,
+} from './utils/canonical-id';
