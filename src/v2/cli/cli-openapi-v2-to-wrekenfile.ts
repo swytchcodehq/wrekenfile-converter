@@ -54,7 +54,12 @@ async function main() {
   let wrekenfileYaml: string;
   try {
     wrekenfileYaml = generateWrekenfile(swaggerSpec, baseDir);
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 'OPENAPI_V3_DETECTED') {
+      console.error('Error: OpenAPI v3 spec supplied. Use the v3 converter:');
+      console.error(`  npx ts-node src/v2/cli/cli-openapi-to-wrekenfile.ts --input ${opts.input} --output ${opts.output || 'output_wrekenfile.yaml'}`);
+      process.exit(1);
+    }
     console.error('Failed to generate Wrekenfile:', err);
     process.exit(1);
   }

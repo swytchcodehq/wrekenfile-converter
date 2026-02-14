@@ -65,6 +65,13 @@ export function validateOpenApiV3Spec(spec: any): void {
   }
 
   if (!spec.openapi) {
+    if (spec.swagger) {
+      throw createConverterError(
+        "OpenAPI v2 (Swagger) spec supplied; use the v2 converter (cli-openapi-v2-to-wrekenfile.ts).",
+        "OPENAPI_V2_DETECTED",
+        { specKeys: Object.keys(spec), detectedVersion: spec.swagger }
+      );
+    }
     throw createConverterError(
       "Invalid OpenAPI v3 specification: missing 'openapi' field",
       "MISSING_OPENAPI_VERSION",
@@ -111,6 +118,13 @@ export function validateOpenApiV2Spec(spec: any): void {
   }
 
   if (!spec.swagger) {
+    if (spec.openapi) {
+      throw createConverterError(
+        "OpenAPI v3 spec supplied; use the v3 converter (cli-openapi-to-wrekenfile.ts).",
+        "OPENAPI_V3_DETECTED",
+        { specKeys: Object.keys(spec), detectedVersion: spec.openapi }
+      );
+    }
     throw createConverterError(
       "Invalid OpenAPI v2 specification: missing 'swagger' field",
       "MISSING_SWAGGER_VERSION",

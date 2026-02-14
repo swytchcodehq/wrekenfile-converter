@@ -137,23 +137,30 @@ const miniFiles: MiniWrekenfile[] = generateMiniWrekenfiles(wrekenfileYaml);
 
 ## CANONICAL_ID (Stable Method Identifier)
 
-Generated Wrekenfiles include a `CANONICAL_ID` field on each entry under `METHODS`. This gives every method a **stable, semantic identifier** without breaking backward compatibility with the existing method keys.
+Generated Wrekenfiles use `CANONICAL_ID` as the **method key** in the `METHODS` section, providing a stable, semantic identifier for each API method.
 
-- **Where it lives**: `METHODS.<methodKey>.CANONICAL_ID`
+- **Method Keys**: Methods are keyed by their `CANONICAL_ID` (e.g., `METHODS.api.cluster.get`)
 - **Format**: `<namespace>.<resource>.<action>` (example: `api.cluster.get`)
 - **Deterministic**: derived from `HTTP.METHOD` + `HTTP.ENDPOINT` (no LLM)
 - **No path params**: `{id}` etc. are excluded from the identifier
-- **Collision-safe**: if two methods would produce the same canonical ID, the generator deterministically expands or appends a short hash to keep IDs unique
+- **Collision-safe**: if two methods would produce the same canonical ID, the generator deterministically appends a short hash to keep IDs unique
+- **RETURNVAR**: Return variable names are derived from `CANONICAL_ID` (dots replaced with underscores, e.g., `api_cluster_get` for status 200, `api_cluster_get_404` for error responses)
+- **Struct Names**: Inline request/response struct names are aligned with `CANONICAL_ID` (e.g., `api.cluster.getRequest`, `api.cluster.getResponse200`)
+- **Struct Filtering**: Unused struct definitions are automatically removed from the generated Wrekenfile
 
 Example:
 
 ```yaml
 METHODS:
-  get--api-clusters--id-:
+  api.cluster.get:
     CANONICAL_ID: api.cluster.get
     HTTP:
       METHOD: GET
       ENDPOINT: /api/clusters/{id}
+    RETURNS:
+      - TYPE: STRUCT(api.cluster.getResponse200)
+        RETURNVAR: api_cluster_get
+        STATUS: 200
 ```
 
 The full deterministic spec (for re-implementing in SDKs/other languages) is documented in [`specification/canonical_id.md`](./specification/canonical_id.md).
