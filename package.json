@@ -1,6 +1,6 @@
 {
   "name": "wrekenfile-converter",
-  "version": "2.1.7",
+  "version": "2.1.8",
   "description": "Convert OpenAPI and Postman specs into Wrekenfiles, with chunking for vector database storage",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
