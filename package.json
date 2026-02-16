@@ -1,6 +1,6 @@
 {
   "name": "wrekenfile-converter",
-  "version": "2.1.8",
+  "version": "2.1.9",
   "description": "Convert OpenAPI and Postman specs into Wrekenfiles, with chunking for vector database storage",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -32,7 +32,7 @@
   "homepage": "https://wreken.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/swytchcode/wrekenfile-converter.git"
+    "url": "https://gitlab.com/swytchcode/wrekenfile.git"
   },
   "license": "MIT",
   "files": [
