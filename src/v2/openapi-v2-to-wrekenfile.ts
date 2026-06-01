@@ -5,15 +5,10 @@ import * as path from 'path';
 import { load } from 'js-yaml';
 import { generateYamlString } from './utils/yaml-utils';
 import { 
-  WREKENFILE_VERSION, 
-  DEFAULT_BASE_URL, 
-  YAML_DUMP_OPTIONS,
-  EXECUTION_MODE_ASYNC,
-  ASYNC_RETURNS_RESULT,
-  TYPE_VOID,
+  WREKENFILE_VERSION,
+  EXECUTION_MODE_SYNC,
   TYPE_ANY,
   BODYTYPE_RAW,
-  DEFAULT_HTTP_SCHEME,
   CONTENT_TYPE_JSON,
   CONTENT_TYPE_FORM_DATA,
   CONTENT_TYPE_URLENCODED,
@@ -23,15 +18,15 @@ import {
   AUTH_BASIC_AUTH,
   AUTH_TEMPLATE_BEARER_ACCESS,
   AUTH_TEMPLATE_BASIC,
-  AUTH_TEMPLATE_ID_TOKEN,
   HTTP_METHODS_WITH_BODY,
 } from './utils/constants';
 import { generateReturnVarName, generateErrorWhen } from './utils/response-utils';
-import { mapOpenApiType, Primitive } from './utils/type-utils';
+import { mapOpenApiType } from './utils/type-utils';
 import { generateOpenApiSummary } from './utils/summary-utils';
 import { validateOpenApiV2Spec, validateBaseDir, logError, createConverterError } from './utils/error-utils';
 import { resolveCanonicalIds, computeCanonicalId, type MethodCanonicalInput } from './utils/canonical-id';
 import { filterStructsByUsage } from './utils/struct-utils';
+import { computeConversionStats, type ConversionStats } from './utils/conversion-stats';
 
 const externalRefCache: Record<string, any> = {};
 
@@ -117,6 +112,40 @@ function resolveRef(ref: string, spec: any, baseDir: string): any {
   }
 }
 
+/**
+ * Build a Wrekenfile map value-type string from a Swagger v2
+ * `additionalProperties` value.
+ */
+function mapSchemaToMapType(ap: any, spec: any, baseDir: string): string {
+  if (ap === true || !ap || typeof ap !== 'object') {
+    return 'map[STRING]ANY';
+  }
+  if (ap.$ref) {
+    const resolved = resolveRef(ap.$ref, spec, baseDir);
+    if (resolved && resolved.type && resolved.type !== 'object') {
+      return `map[STRING]${mapType(resolved.type, resolved.format)}`;
+    }
+    return `map[STRING]STRUCT(${ap.$ref.split('/').pop()})`;
+  }
+  if (ap.type === 'array' && ap.items) {
+    if (ap.items.$ref) {
+      const resolvedItems = resolveRef(ap.items.$ref, spec, baseDir);
+      if (resolvedItems && resolvedItems.type && resolvedItems.type !== 'object') {
+        return `map[STRING][]${mapType(resolvedItems.type, resolvedItems.format)}`;
+      }
+      return `map[STRING][]STRUCT(${ap.items.$ref.split('/').pop()})`;
+    }
+    if (ap.items.type) {
+      return `map[STRING][]${mapType(ap.items.type, ap.items.format)}`;
+    }
+    return 'map[STRING][]ANY';
+  }
+  if (ap.type) {
+    return `map[STRING]${mapType(ap.type, ap.format)}`;
+  }
+  return 'map[STRING]ANY';
+}
+
 function getTypeFromSchema(schema: any, spec: any, baseDir: string): string {
   if (!schema || typeof schema !== 'object') {
     return 'ANY';
@@ -125,6 +154,14 @@ function getTypeFromSchema(schema: any, spec: any, baseDir: string): string {
     const resolvedSchema = resolveRef(schema.$ref, spec, baseDir);
     if (resolvedSchema && resolvedSchema.type && resolvedSchema.type !== 'object') {
       return mapType(resolvedSchema.type, resolvedSchema.format);
+    }
+    // Resolve propertyless object schemas at the $ref site to avoid dangling
+    // STRUCT(Foo) references for schemas that will never produce fields.
+    if (resolvedSchema && resolvedSchema.type === 'object' && !resolvedSchema.properties) {
+      if (resolvedSchema.additionalProperties) {
+        return mapSchemaToMapType(resolvedSchema.additionalProperties, spec, baseDir);
+      }
+      return 'OBJECT';
     }
     const refName = schema.$ref.split('/').pop();
     return `STRUCT(${refName})`;
@@ -174,10 +211,45 @@ function parseSchema(name: string, schema: any, spec: any, baseDir: string, dept
     return schema.allOf.flatMap((s: any) => parseSchema(name, s, spec, baseDir, depth + 1));
   }
   if (schema && typeof schema === 'object' && (schema.oneOf || schema.anyOf)) {
-    return [{
-      name: 'variant',
-      type: `STRUCT(${name}_Union)`,
-      REQUIRED: false
+    // Enumerate union variants with their actual types
+    const variants = schema.oneOf || schema.anyOf;
+    const fields: any[] = [];
+    // Add discriminator field if present
+    if (schema.discriminator?.propertyName) {
+      fields.push({
+        name: schema.discriminator.propertyName,
+        type: 'STRING',
+        REQUIRED: true,
+      });
+    }
+    for (let i = 0; i < variants.length; i++) {
+      const variant = variants[i];
+      if (variant && typeof variant === 'object' && variant.$ref) {
+        const refName = typeof variant.$ref === 'string' ? variant.$ref.split('/').pop() : undefined;
+        const variantType = getTypeFromSchema(variant, spec, baseDir) || TYPE_ANY;
+        fields.push({
+          name: refName ? `variant_${refName}` : `variant_${i}`,
+          type: variantType,
+          REQUIRED: false,
+        });
+      } else if (variant && typeof variant === 'object' && variant.type && variant.type !== 'object') {
+        fields.push({
+          name: `variant_${i}`,
+          type: mapType(variant.type, variant.format),
+          REQUIRED: false,
+        });
+      } else {
+        fields.push({
+          name: `variant_${i}`,
+          type: 'ANY',
+          REQUIRED: false,
+        });
+      }
+    }
+    return fields.length > 0 ? fields : [{
+      name: 'value',
+      type: 'ANY',
+      REQUIRED: false,
     }];
   }
 
@@ -223,8 +295,28 @@ function parseSchema(name: string, schema: any, spec: any, baseDir: string, dept
 
 function generateStructName(_operationId: string, method: string, path: string, suffix: string): string {
   // Use canonical ID as the base for inline request/response struct names
-  const canonicalId = computeCanonicalId(method.toUpperCase(), path);
+  const canonicalId = computeCanonicalId('api', method.toUpperCase(), path);
   return `${canonicalId}${suffix}`;
+}
+
+/**
+ * Pick a struct name for a Swagger v2 error response whose schema is inline
+ * (no `$ref`). When the response object itself is a `$ref` to `#/responses/X`,
+ * the returned name is stable across all call sites so one definition is
+ * referenced from every operation.
+ */
+function getErrorStructName(rawResponse: any, op: any, code: string): string {
+  if (rawResponse && rawResponse.$ref && typeof rawResponse.$ref === 'string') {
+    const key = rawResponse.$ref.split('/').pop() || '';
+    if (/^[0-9]+$/.test(key)) {
+      return `Error${key}`;
+    }
+    if (key) {
+      return `Response_${key}`;
+    }
+  }
+  const opId = op.operationId || 'op';
+  return `${opId}_Error${code}`;
 }
 
 function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
@@ -289,7 +381,23 @@ function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
     collectAllReferencedSchemas(definitions[name], name);
     const schema = definitions[name];
     if (schema && (schema.oneOf || schema.anyOf)) {
-      structs[`${name}_Union`] = [{ name: 'value', type: 'ANY', REQUIRED: false }];
+      // Build union struct with actual variant types
+      const unionFields = parseSchema(`${name}_Union`, schema, spec, baseDir);
+      structs[`${name}_Union`] = unionFields.length > 0 ? unionFields : [{ name: 'value', type: 'ANY', REQUIRED: false }];
+    }
+  }
+
+  // Register shared response schemas from spec.responses under the same name
+  // extractErrors uses for them, so `STRUCT(ErrorNNN)` references resolve.
+  const topLevelResponses = spec.responses || {};
+  for (const [key, rawResp] of Object.entries<any>(topLevelResponses)) {
+    if (!rawResp || !rawResp.schema) continue;
+    const structName = /^[0-9]+$/.test(key) ? `Error${key}` : `Response_${key}`;
+    if (rawResp.schema.$ref) {
+      const refName = rawResp.schema.$ref.split('/').pop();
+      if (refName) collectAllReferencedSchemas(resolveRef(rawResp.schema.$ref, spec, baseDir), refName);
+    } else if (typeof rawResp.schema === 'object') {
+      collectAllReferencedSchemas(rawResp.schema, structName);
     }
   }
   
@@ -328,7 +436,12 @@ function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
                 const refName = actualResponse.schema.$ref.split('/').pop();
                 if (refName) collectAllReferencedSchemas(resolveRef(actualResponse.schema.$ref, spec, baseDir), refName);
               } else if (actualResponse.schema && typeof actualResponse.schema === 'object') {
-                const responseStructName = generateStructName(operationId, method, pathStr, `Response${code}`);
+                // For error codes, use the same name extractErrors will emit
+                // so the STRUCT(...) reference resolves.
+                const statusCode = parseInt(code);
+                const responseStructName = statusCode >= 400
+                  ? getErrorStructName(response, op, code)
+                  : generateStructName(operationId, method, pathStr, `Response${code}`);
                 collectAllReferencedSchemas(actualResponse.schema, responseStructName);
               }
             }
@@ -365,7 +478,7 @@ function getContentTypeAndBodyType(op: any, spec: any): { contentType: string; b
 
 function getAcceptContentType(op: any, spec: any): string {
   // Get the first content type from the first success response (2xx)
-  for (const [code, response] of Object.entries<any>(op.responses || {})) {
+  for (const [code, _response] of Object.entries<any>(op.responses || {})) {
     const statusCode = parseInt(code);
     if (statusCode >= 200 && statusCode < 300) {
       // OpenAPI v2 uses produces array
@@ -395,7 +508,7 @@ function getHeadersForOperation(op: any, spec: any, method?: string, baseDir?: s
   const security = op.security || spec.security || [];
   
   for (const securityRequirement of security) {
-    for (const [schemeName, scopes] of Object.entries(securityRequirement)) {
+    for (const [schemeName, _scopes] of Object.entries(securityRequirement)) {
       const scheme = spec.securityDefinitions?.[schemeName]; // OpenAPI v2 uses securityDefinitions
       if (scheme) {
         if (scheme.type === 'basic') {
@@ -698,9 +811,16 @@ function extractErrors(op: any, spec: any, baseDir: string): any[] {
         const schema = actualResponse.schema;
         if (schema.$ref) {
           errorType = getTypeFromSchema(schema, spec, baseDir);
+        } else if (schema.type && schema.type !== 'object') {
+          // Primitive / array error schema — emit the primitive type directly
+          // instead of wrapping in a dangling STRUCT(...).
+          errorType = getTypeFromSchema(schema, spec, baseDir);
         } else {
-          // Inline error schema - generate a struct name
-          const errorStructName = `Error${code}`;
+          // Inline object error schema — generate a struct name. Shared
+          // Swagger v2 responses (spec.responses.X) get a stable name so the
+          // corresponding struct registered by extractStructs is the same one
+          // extractErrors references.
+          const errorStructName = getErrorStructName(response, op, code);
           errorType = `STRUCT(${errorStructName})`;
         }
       }
@@ -732,12 +852,6 @@ function generateMethodAlias(operationId: string, method: string, path: string):
 }
 
 function extractMethods(spec: any, baseDir: string): Record<string, any> {
-  // OpenAPI v2 constructs base URL from schemes, host, and basePath
-  const scheme = spec.schemes?.[0] || DEFAULT_HTTP_SCHEME;
-  const host = spec.host || '';
-  const basePath = spec.basePath || '';
-  const base = `${scheme}://${host}${basePath}`;
-  
   const methods: Record<string, any> = {};
   
   // Valid HTTP methods
@@ -813,16 +927,7 @@ function extractMethods(spec: any, baseDir: string): Record<string, any> {
       // EXECUTION section (mandatory) - v2.0.2 requires KIND
       methodDef.EXECUTION = {
         KIND: 'http',
-        MODE: EXECUTION_MODE_ASYNC, // HTTP methods default to async
-      };
-
-      // ASYNC section (required when MODE = async)
-      const resultType = returns.length > 0 ? returns[0].RETURNTYPE : TYPE_VOID;
-      methodDef.ASYNC = {
-        RETURNS: ASYNC_RETURNS_RESULT,
-        RESULT: {
-          TYPE: resultType,
-        },
+        MODE: EXECUTION_MODE_SYNC, // REST APIs are synchronous request/response
       };
 
       // INPUTS section (optional)
@@ -850,7 +955,7 @@ function extractSecurityDefaults(spec: any): Record<string, string> {
   const defs: Record<string, string> = {};
   const securityDefinitions = spec.securityDefinitions || {}; // OpenAPI v2 uses securityDefinitions
   
-  for (const [name, scheme] of Object.entries<any>(securityDefinitions)) {
+  for (const [_name, scheme] of Object.entries<any>(securityDefinitions)) {
     if (scheme && typeof scheme === 'object' && scheme.type === 'basic') {
       defs.basic_auth = AUTH_TEMPLATE_BASIC;
     } else if (scheme && typeof scheme === 'object' && scheme.type === 'apiKey') {
@@ -926,7 +1031,8 @@ function generateWrekenfile(spec: any, baseDir: string): string {
         existingCanonicalId: methodData.CANONICAL_ID,
       })
     );
-    const canonicalIdMap = resolveCanonicalIds(canonicalInputs);
+    const libraryName = spec?.info?.title || 'unknown';
+    const canonicalIdMap = resolveCanonicalIds(canonicalInputs, libraryName);
 
     // Add CANONICAL_ID to each method
     for (const [methodId, methodData] of Object.entries(methods)) {
@@ -953,7 +1059,8 @@ function generateWrekenfile(spec: any, baseDir: string): string {
     wrekenfile.METHODS = renamedMethods;
 
     // Add STRUCTS if we have any
-    if (Object.keys(structs).length > 0) {
+    const preFilterStructCount = Object.keys(structs).length;
+    if (preFilterStructCount > 0) {
       wrekenfile.STRUCTS = structs;
     }
 
@@ -990,6 +1097,79 @@ function generateWrekenfile(spec: any, baseDir: string): string {
   }
 }
 
+/**
+ * Generate a Wrekenfile and return both the YAML string and conversion stats.
+ */
+function generateWrekenfileWithStats(spec: any, baseDir: string): { yaml: string; stats: ConversionStats } {
+  try {
+    validateOpenApiV2Spec(spec);
+    validateBaseDir(baseDir);
+
+    const defaults = extractSecurityDefaults(spec);
+    const methods = extractMethods(spec, baseDir);
+    const structs = extractStructs(spec, baseDir);
+
+    const canonicalInputs: MethodCanonicalInput[] = Object.entries(methods).map(
+      ([methodId, methodData]) => ({
+        methodId,
+        httpMethod: methodData.HTTP?.METHOD,
+        endpoint: methodData.HTTP?.ENDPOINT,
+        existingCanonicalId: methodData.CANONICAL_ID,
+      })
+    );
+    const libraryName = spec?.info?.title || 'unknown';
+    const canonicalIdMap = resolveCanonicalIds(canonicalInputs, libraryName);
+    for (const [methodId, methodData] of Object.entries(methods)) {
+      const canonicalId = canonicalIdMap.get(methodId);
+      if (canonicalId) {
+        methodData.CANONICAL_ID = canonicalId;
+      }
+    }
+    updateReturnVarsUsingCanonicalId(methods);
+
+    const wrekenfile: any = { VERSION: WREKENFILE_VERSION };
+    if (Object.keys(defaults).length > 0) {
+      wrekenfile.DEFAULTS = defaults;
+    }
+    const renamedMethods = renameMethodsToCanonicalId(methods);
+    wrekenfile.METHODS = renamedMethods;
+
+    const preFilterStructCount = Object.keys(structs).length;
+    if (preFilterStructCount > 0) {
+      wrekenfile.STRUCTS = structs;
+    }
+    filterStructsByUsage(wrekenfile);
+
+    const stats = computeConversionStats(wrekenfile, preFilterStructCount);
+    const yaml = generateYamlString(wrekenfile);
+
+    return { yaml, stats };
+  } catch (err: any) {
+    logError(err, {
+      converter: 'openapi-v2-to-wrekenfile',
+      baseDir,
+      specInfo: spec?.info?.title || 'unknown',
+      specVersion: spec?.swagger || 'unknown'
+    });
+
+    if (err.code && (err.code.startsWith('INVALID_') || err.code.startsWith('MISSING_'))) {
+      throw err;
+    }
+
+    throw createConverterError(
+      `Failed to generate Wrekenfile from OpenAPI v2 spec: ${err.message}`,
+      "GENERATION_FAILED",
+      {
+        converter: 'openapi-v2-to-wrekenfile',
+        baseDir,
+        specInfo: spec?.info?.title || 'unknown',
+        specVersion: spec?.swagger || 'unknown'
+      },
+      err
+    );
+  }
+}
+
 // Export for programmatic use
-export { generateWrekenfile };
+export { generateWrekenfile, generateWrekenfileWithStats };
 

@@ -4,16 +4,32 @@ import path from 'path';
 import { generateWrekenfile, loadEnvironmentFile } from '../postman-to-wrekenfile';
 
 function printUsage() {
-  console.log('Usage: npx ts-node src/v2/cli/cli-postman-to-wrekenfile.ts <postman_collection.json> <output_wrekenfile.yaml> [postman_environment.json]');
+  console.log('Usage: wrekenfile-postman --input <postman_collection.json> [--output <wrekenfile.yaml>] [--env <postman_environment.json>]');
   process.exit(1);
 }
 
-async function main() {
+function parseArgs() {
   const args = process.argv.slice(2);
-  if (args.length < 2) {
+  const opts: any = {};
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--input' || args[i] === '-i') {
+      opts.input = args[++i];
+    } else if (args[i] === '--output' || args[i] === '-o') {
+      opts.output = args[++i];
+    } else if (args[i] === '--env' || args[i] === '-e') {
+      opts.env = args[++i];
+    }
+  }
+  return opts;
+}
+
+async function main() {
+  const opts = parseArgs();
+  if (!opts.input) {
     printUsage();
   }
-  const [inputFile, outputFile, envFile] = args;
+  const inputFile = path.resolve(opts.input);
+  const outputFile = path.resolve(opts.output || 'output_wrekenfile.yaml');
 
   if (!fs.existsSync(inputFile)) {
     console.error(`Input file not found: ${inputFile}`);
@@ -21,7 +37,8 @@ async function main() {
   }
 
   let variables = {};
-  if (envFile) {
+  if (opts.env) {
+    const envFile = path.resolve(opts.env);
     if (!fs.existsSync(envFile)) {
       console.error(`Environment file not found: ${envFile}`);
       process.exit(1);
@@ -34,7 +51,7 @@ async function main() {
     const postmanCollection = JSON.parse(postmanContent);
     const wrekenfileYaml = generateWrekenfile(postmanCollection, variables);
     fs.writeFileSync(outputFile, wrekenfileYaml);
-    console.log(`Wrekenfile v2.0.1 generated: ${outputFile}`);
+    console.log(`Wrekenfile v2.0.2 generated: ${outputFile}`);
   } catch (error) {
     console.error(`Error generating Wrekenfile: ${(error as any).message}`);
     process.exit(1);

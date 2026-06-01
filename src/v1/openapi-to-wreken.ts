@@ -215,7 +215,7 @@ function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
         const operationId = op.operationId || `${method}-${pathStr.replace(/[\/{}]/g, '-')}`;
         // Extract request body schemas
         if (op.requestBody?.content) {
-          for (const [contentType, content] of Object.entries<any>(op.requestBody.content)) {
+          for (const [_contentType, content] of Object.entries<any>(op.requestBody.content)) {
             if (content && content.schema) {
               if (content.schema && content.schema.$ref) {
                 const refName = content.schema.$ref.split('/').pop();
@@ -231,7 +231,7 @@ function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
         if (op.responses) {
           for (const [code, response] of Object.entries<any>(op.responses)) {
             if (response && response.content) {
-              for (const [contentType, content] of Object.entries<any>(response.content)) {
+              for (const [_contentType, content] of Object.entries<any>(response.content)) {
                 if (content && content.schema) {
                   if (content.schema && content.schema.$ref) {
                     const refName = content.schema.$ref.split('/').pop();
@@ -287,7 +287,7 @@ function getHeadersForOperation(op: any, spec: any): Record<string, string>[] {
   const security = op.security || spec.security || [];
   
   for (const securityRequirement of security) {
-    for (const [schemeName, scopes] of Object.entries(securityRequirement)) {
+    for (const [schemeName, _scopes] of Object.entries(securityRequirement)) {
       const scheme = spec.components?.securitySchemes?.[schemeName];
       if (scheme) {
         if (scheme.type === 'http') {
@@ -499,7 +499,7 @@ function extractSecurityDefaults(spec: any): any[] {
   const defs: any[] = [];
   const securitySchemes = spec.components?.securitySchemes || {};
   
-  for (const [name, scheme] of Object.entries<any>(securitySchemes)) {
+  for (const [_name, scheme] of Object.entries<any>(securitySchemes)) {
     if (scheme.type === 'http') {
       if (scheme.scheme === 'bearer') {
       defs.push({ bearer_token: 'BEARER <TOKEN>' });

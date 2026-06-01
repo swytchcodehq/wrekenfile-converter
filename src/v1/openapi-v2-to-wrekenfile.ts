@@ -226,7 +226,7 @@ function getHeadersForOperation(op: any, spec: any): Record<string, string>[] {
   const security = op.security || spec.security || [];
   
   for (const securityRequirement of security) {
-    for (const [schemeName, scopes] of Object.entries(securityRequirement)) {
+    for (const [schemeName, _scopes] of Object.entries(securityRequirement)) {
       const scheme = spec.securityDefinitions?.[schemeName];
       if (scheme) {
         if (scheme.type === 'basic') {
@@ -432,7 +432,7 @@ function extractSecurityDefaults(spec: any): any[] {
   const defs: any[] = [];
   const securityDefinitions = spec.securityDefinitions || {};
   
-  for (const [name, scheme] of Object.entries<any>(securityDefinitions)) {
+  for (const [_name, scheme] of Object.entries<any>(securityDefinitions)) {
     if (scheme && typeof scheme === 'object' && scheme.type === 'basic') {
       defs.push({ basic_auth: 'Basic <BASE64>' });
     } else if (scheme && typeof scheme === 'object' && scheme.type === 'apiKey') {

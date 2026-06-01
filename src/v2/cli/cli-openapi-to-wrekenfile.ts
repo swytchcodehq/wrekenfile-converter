@@ -5,7 +5,7 @@ import { load } from 'js-yaml';
 import { generateWrekenfile } from '../openapi-to-wreken';
 
 function printUsage() {
-  console.log(`Usage: npx ts-node src/v2/cli/cli-openapi-to-wrekenfile.ts --input <openapi.yaml|json> [--output <wrekenfile.yaml>] [--cwd <dir>]`);
+  console.log(`Usage: wrekenfile --input <openapi.yaml|json> [--output <wrekenfile.yaml>] [--cwd <dir>]`);
 }
 
 function parseArgs() {
@@ -57,7 +57,7 @@ async function main() {
   } catch (err: any) {
     if (err?.code === 'OPENAPI_V2_DETECTED') {
       console.error('Error: OpenAPI v2 (Swagger) spec supplied. Use the v2 converter:');
-      console.error(`  npx ts-node src/v2/cli/cli-openapi-v2-to-wrekenfile.ts --input ${opts.input} --output ${opts.output || 'output_wrekenfile.yaml'}`);
+      console.error(`  wrekenfile-v2 --input ${opts.input} --output ${opts.output || 'output_wrekenfile.yaml'}`);
       process.exit(1);
     }
     console.error('Failed to generate Wrekenfile:', err);
@@ -66,7 +66,7 @@ async function main() {
 
   try {
     fs.writeFileSync(outputPath, wrekenfileYaml, 'utf8');
-    console.log(`Wrekenfile v2.0.1 written to ${outputPath}`);
+    console.log(`Wrekenfile v2.0.2 written to ${outputPath}`);
   } catch (err) {
     console.error('Failed to write output file:', err);
     process.exit(1);

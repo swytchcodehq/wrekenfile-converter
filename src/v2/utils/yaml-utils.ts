@@ -7,7 +7,6 @@ import {
 import { YAML_DUMP_OPTIONS } from './constants';
 
 const TAB_REPLACEMENT = '  ';
-const NON_BREAKING_SPACE = '\u00A0';
 const NEWLINE = '\n';
 const DOUBLE_NEWLINE = '\n\n';
 const CONTROL_CHARS_REGEX = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
@@ -94,7 +93,7 @@ const ARRAY_TYPE_REGEX = /^(\s+)(-?\s*)(TYPE|RETURNTYPE):\s*(\[\]STRUCT\([^)]+\)
 const QUOTE_START_REGEX = /^["']/;
 
 export function removeTypeQuotes(yamlString: string): string {
-  yamlString = yamlString.replace(BLOCK_SCALAR_REGEX, (match, indent, arrayPrefix, key, valueIndent, value) => {
+  yamlString = yamlString.replace(BLOCK_SCALAR_REGEX, (_match, indent, arrayPrefix, key, _valueIndent, value) => {
     return `${indent}${arrayPrefix}${key}: ${value}`;
   });
   
@@ -120,7 +119,9 @@ export function removeUndefinedValues(obj: any): any {
   }
   
   if (Array.isArray(obj)) {
-    return obj.map(item => removeUndefinedValues(item)).filter(item => item !== undefined);
+    return obj
+      .map(item => removeUndefinedValues(item))
+      .filter(item => item !== undefined);
   }
   
   if (typeof obj === 'object') {

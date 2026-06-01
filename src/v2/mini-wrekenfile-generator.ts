@@ -385,7 +385,7 @@ function sanitizeFilename(name: string): string {
 
 function generateFilename(
   methodId: string,
-  methodData: any
+  _methodData: any
 ): string {
   // v2.0.2-mini: One file per method, use method ID as filename
   const cleanName = sanitizeFilename(methodId);
