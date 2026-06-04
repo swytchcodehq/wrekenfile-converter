@@ -61,6 +61,8 @@ function normalizePath(path: string): string {
   let p = path.replace(/^\/+/, '').trim();
   // Strip version prefix: /v1/, /v2/, /v3/
   p = p.replace(/^v\d+\//i, '');
+  p = p.replace(/\.json$/i, '');
+  p = p.replace(/\.xml$/i, '');
   return p.replace(/\/+$/, '');
 }
 
@@ -206,10 +208,9 @@ export function computeCanonicalId(libraryName: string, httpMethod: string, path
   const method = (httpMethod || 'GET').toUpperCase();
 
   // primary resource
-  const resource =
-    segments.length > 1 ? singularize(segments[1]) : singularize(segments[0] || 'resource');
+  const resource = singularize(segments[0] || 'resource');
 
-  const remaining = segments.slice(2);
+  const remaining = segments.slice(1);
   const hasIdInPath =
     /\/\{[^}]+\}(\/|$)/.test(path) || /\/:[^/]+(\/|$)/.test(path);
 
