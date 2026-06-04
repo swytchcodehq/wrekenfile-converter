@@ -5,7 +5,7 @@ import { load } from 'js-yaml';
 import { generateWrekenfile } from '../openapi-v2-to-wrekenfile';
 
 function printUsage() {
-  console.log(`Usage: wrekenfile-v2 --input <swagger.yaml|json> [--output <wrekenfile.yaml>] [--cwd <dir>]`);
+  console.log(`Usage: npx ts-node src/v2/cli/cli-openapi-v2-to-wrekenfile.ts --input <swagger.yaml|json> [--output <wrekenfile.yaml>] [--cwd <dir>]`);
 }
 
 function parseArgs() {
@@ -57,7 +57,7 @@ async function main() {
   } catch (err: any) {
     if (err?.code === 'OPENAPI_V3_DETECTED') {
       console.error('Error: OpenAPI v3 spec supplied. Use the v3 converter:');
-      console.error(`  wrekenfile --input ${opts.input} --output ${opts.output || 'output_wrekenfile.yaml'}`);
+      console.error(`  npx ts-node src/v2/cli/cli-openapi-to-wrekenfile.ts --input ${opts.input} --output ${opts.output || 'output_wrekenfile.yaml'}`);
       process.exit(1);
     }
     console.error('Failed to generate Wrekenfile:', err);
