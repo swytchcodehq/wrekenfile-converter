@@ -1,0 +1,95 @@
+{
+  "info": {
+    "name": "Petstore API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.petstore.com/v1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Pets",
+      "item": [
+        {
+          "name": "List Pets",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/pets?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["pets"],
+              "query": [
+                { "key": "limit", "value": "10" }
+              ]
+            },
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ]
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "[{\"id\": 1, \"name\": \"Fido\", \"tag\": \"dog\"}]"
+            }
+          ]
+        },
+        {
+          "name": "Create Pet",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/pets",
+              "host": ["{{baseUrl}}"],
+              "path": ["pets"]
+            },
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Fido\", \"tag\": \"dog\"}"
+            }
+          },
+          "response": [
+            {
+              "name": "Created",
+              "status": "Created",
+              "code": 201,
+              "body": "{\"id\": 1, \"name\": \"Fido\", \"tag\": \"dog\"}"
+            }
+          ]
+        },
+        {
+          "name": "Get Pet",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/pets/:petId",
+              "host": ["{{baseUrl}}"],
+              "path": ["pets", ":petId"],
+              "variable": [
+                { "key": "petId", "value": "1" }
+              ]
+            },
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ]
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\"id\": 1, \"name\": \"Fido\", \"tag\": \"dog\"}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

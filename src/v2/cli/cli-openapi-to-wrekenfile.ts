@@ -66,7 +66,7 @@ async function main() {
 
   try {
     fs.writeFileSync(outputPath, wrekenfileYaml, 'utf8');
-    console.log(`Wrekenfile v2.0.1 written to ${outputPath}`);
+    console.log(`Wrekenfile v2.0.2 written to ${outputPath}`);
   } catch (err) {
     console.error('Failed to write output file:', err);
     process.exit(1);

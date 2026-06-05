@@ -26,10 +26,19 @@ const STANDARD_VERBS = new Set([
   'check',
   'validate',
   'migrate',
+  'cancel',
+  'refund',
+  'suspend',
+  'approve',
+  'reject',
+  'start',
+  'stop',
+  'pause',
+  'resume',
 ]);
 
 /** Verb-first form for compound actions (kebab segment → camelCase with verb first) */
-const VERB_PREFIXES = ['remove', 'install', 'execute', 'upload', 'download', 'retry', 'connect'];
+
 
 /** Irregular plural → singular */
 const IRREGULAR_SINGULAR: Record<string, string> = {
@@ -52,6 +61,8 @@ function normalizePath(path: string): string {
   let p = path.replace(/^\/+/, '').trim();
   // Strip version prefix: /v1/, /v2/, /v3/
   p = p.replace(/^v\d+\//i, '');
+  p = p.replace(/\.json$/i, '');
+  p = p.replace(/\.xml$/i, '');
   return p.replace(/\/+$/, '');
 }
 
@@ -98,21 +109,6 @@ function toCamelCase(segment: string): string {
  * - If it's a single noun (e.g. "shell"), produce "executeShell"
  * - Otherwise, just kebab/snake -> camelCase
  */
-function actionSegmentToCamel(segment: string): string {
-  const lower = segment.toLowerCase();
-  for (const verb of VERB_PREFIXES) {
-    if (lower.endsWith('-' + verb)) {
-      const rest = segment.slice(0, -(verb.length + 1));
-      return verb + toCamelCase(rest).replace(/^(.)/, (_, c) => c.toUpperCase());
-    }
-  }
-  const camel = toCamelCase(segment);
-  // Single-word noun (e.g. "shell") -> executeShell when not a standard verb
-  if (!segment.includes('-') && !segment.includes('_') && !STANDARD_VERBS.has(lower)) {
-    return 'execute' + camel.charAt(0).toUpperCase() + camel.slice(1);
-  }
-  return camel;
-}
 
 /**
  * Extract the primary verb for a method from remaining path segments and HTTP method.
@@ -137,7 +133,7 @@ function extractPrimaryVerb(
     // Segment ends with -verb (e.g. "helm-release-remove")
     for (const verb of STANDARD_VERBS) {
       if (lower.endsWith('-' + verb)) {
-        foundVerbs.push(verb);
+        foundVerbs.push(verb as string);
         break;
       }
     }
@@ -168,7 +164,7 @@ function extractPrimaryVerb(
  * Extract at most ONE subresource from remaining segments, based on nouns before the verb.
  * We pick the last meaningful noun before the verb (most specific).
  */
-function extractSubresource(remaining: string[], verb: string): string | null {
+function extractSubresource(remaining: string[], _verb: string): string | null {
   if (remaining.length === 0) return null;
 
   // Find index of the verb in remaining segments (if present)
@@ -199,22 +195,22 @@ function extractSubresource(remaining: string[], verb: string): string | null {
  * Compute base canonical ID from HTTP method and path. Deterministic; no collision handling.
  * Enforces grammar: <namespace>.<resource>[.<subresource>].<action>
  */
-export function computeCanonicalId(httpMethod: string, path: string): string {
+export function computeCanonicalId(libraryName: string, httpMethod: string, path: string): string {
   const normalized = normalizePath(path);
   const segments = pathSegmentsWithoutParams(normalized);
 
+  const namespace = libraryName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'api';
+  
   if (segments.length === 0) {
-    return 'api.resource.execute';
+    return `${namespace}.resource.execute`;
   }
 
   const method = (httpMethod || 'GET').toUpperCase();
 
-  // namespace and primary resource
-  const namespace = segments[0].toLowerCase();
-  const resource =
-    segments.length > 1 ? singularize(segments[1]) : singularize(segments[0] || 'resource');
+  // primary resource
+  const resource = singularize(segments[0] || 'resource');
 
-  const remaining = segments.slice(2);
+  const remaining = segments.slice(1);
   const hasIdInPath =
     /\/\{[^}]+\}(\/|$)/.test(path) || /\/:[^/]+(\/|$)/.test(path);
 
@@ -238,18 +234,7 @@ export function computeCanonicalId(httpMethod: string, path: string): string {
   return parts.join('.');
 }
 
-/**
- * Create a short deterministic hash from a string (for collision fallback).
- */
-function shortHash(str: string): string {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    const c = str.charCodeAt(i);
-    h = (h << 5) - h + c;
-    h = h & 0xffff;
-  }
-  return Math.abs(h).toString(16).slice(0, 4);
-}
+
 
 export interface MethodCanonicalInput {
   methodId: string;
@@ -266,7 +251,8 @@ export interface MethodCanonicalInput {
  * 4. If still colliding: append short deterministic hash.
  */
 export function resolveCanonicalIds(
-  methods: MethodCanonicalInput[]
+  methods: MethodCanonicalInput[],
+  libraryName: string
 ): Map<string, string> {
   const result = new Map<string, string>();
   const used = new Map<string, string>(); // canonicalId -> methodId (first claimant)
@@ -299,7 +285,7 @@ export function resolveCanonicalIds(
       continue;
     }
     if (m.httpMethod && m.endpoint) {
-      const baseId = computeCanonicalId(m.httpMethod, m.endpoint);
+      const baseId = computeCanonicalId(libraryName, m.httpMethod, m.endpoint);
       if (tryAssign(m.methodId, baseId)) {
         result.set(m.methodId, baseId);
       } else {
@@ -312,27 +298,29 @@ export function resolveCanonicalIds(
       }
     } else {
       // No HTTP info (e.g. SDK-only): use methodId as basis, sanitized
+      const namespace = libraryName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'sdk';
       const fallback = m.methodId
         .toLowerCase()
         .replace(/^([a-z]+)--/, '$1.')
         .replace(/--/g, '.')
         .replace(/-([a-z])/g, (_, c) => c.toUpperCase())
         .replace(/[^a-zA-Z0-9.]/g, '');
-      const baseId = fallback || 'sdk.method.' + shortHash(m.methodId);
+      const baseId = fallback || `${namespace}.method`;
       let cid = baseId;
-      if (!tryAssign(m.methodId, cid)) cid = baseId + '_' + shortHash(m.methodId);
-      result.set(m.methodId, cid);
+      if (!tryAssign(m.methodId, cid)) {
+          pending.push({ methodId: m.methodId, httpMethod: m.httpMethod || 'GET', endpoint: m.endpoint || '', baseId });
+      } else {
+          result.set(m.methodId, cid);
+      }
     }
   }
 
-  // Resolve pending collisions: use hash-based suffix for uniqueness (no extra verbs)
+  // Resolve pending collisions: use counter suffix for uniqueness (no hashes)
   for (const p of pending) {
-    // Always keep the baseId semantic; just append a deterministic hash to disambiguate
-    let candidate = p.baseId + '_' + shortHash(p.endpoint + p.methodId);
-    let finalCandidate = candidate;
-    let attempts = 0;
-    while (!tryAssign(p.methodId, finalCandidate) && attempts < 10) {
-      finalCandidate = p.baseId + '_' + shortHash(p.endpoint + p.methodId + attempts.toString());
+    let finalCandidate = p.baseId;
+    let attempts = 1;
+    while (!tryAssign(p.methodId, finalCandidate) && attempts < 100) {
+      finalCandidate = `${p.baseId}.${attempts}`;
       attempts++;
     }
     result.set(p.methodId, finalCandidate);
@@ -353,11 +341,16 @@ export function resolveCanonicalIds(
   }
   
   if (duplicates.size > 0) {
-    // This should never happen with proper hash fallback, but if it does, force unique IDs
+    // Force uniqueness with a fallback counter if something incredibly went wrong
     console.warn(`Warning: Found ${duplicates.size} duplicate canonical ID(s), forcing uniqueness`);
     for (const [methodId, canonicalId] of duplicates.entries()) {
-      // Force unique by appending methodId hash
-      const uniqueId = canonicalId + '_' + shortHash(methodId);
+      let uniqueId = canonicalId;
+      let counter = 1;
+      while(seen.has(uniqueId) && seen.get(uniqueId) !== methodId) {
+          uniqueId = `${canonicalId}.fallback${counter}`;
+          counter++;
+      }
+      seen.set(uniqueId, methodId);
       result.set(methodId, uniqueId);
     }
   }

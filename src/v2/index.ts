@@ -1,10 +1,10 @@
 // v2 entry point - Wrekenfile spec version 2.1.0
 
 // Export OpenAPI v3 converter
-export { generateWrekenfile } from './openapi-to-wreken';
+export { generateWrekenfile, generateWrekenfileWithStats } from './openapi-to-wreken';
 
 // Export OpenAPI v2 (Swagger) converter
-export { generateWrekenfile as generateWrekenfileV2 } from './openapi-v2-to-wrekenfile';
+export { generateWrekenfile as generateWrekenfileV2, generateWrekenfileWithStats as generateWrekenfileV2WithStats } from './openapi-v2-to-wrekenfile';
 
 // Export Postman converter
 export { 
@@ -28,3 +28,10 @@ export {
   resolveCanonicalIds,
   type MethodCanonicalInput,
 } from './utils/canonical-id';
+
+// Export conversion stats utilities
+export {
+  computeConversionStats,
+  formatConversionStats,
+  type ConversionStats,
+} from './utils/conversion-stats';

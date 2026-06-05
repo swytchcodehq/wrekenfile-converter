@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as path from 'path';
 import { load as yamlLoad } from 'js-yaml';
 
 type Primitive = 'STRING' | 'INT' | 'FLOAT' | 'BOOL' | 'TIMESTAMP' | 'DATE' | 'ANY' | 'UUID';
@@ -40,8 +39,7 @@ function generateDesc(item: any, method: string, path: string): string {
   return `${method.toUpperCase()} ${path}`;
 }
 
-function generateStructName(itemName: string, method: string, path: string, suffix: string): string {
-  const cleanName = itemName.replace(/[^a-zA-Z0-9]/g, '');
+function generateStructName(_itemName: string, method: string, path: string, suffix: string): string {
   const cleanPath = path.replace(/[\/{}]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   return `${method.toLowerCase()}-${cleanPath}-${suffix}`;
 }
@@ -305,7 +303,7 @@ function getHeadersForOperation(request: any, variables: Record<string, string>)
   return headers;
 }
 
-function extractParameters(request: any, variables: Record<string, string>): any[] {
+function extractParameters(request: any, _variables: Record<string, string>): any[] {
   const inputParams: any[] = [];
   
   // Extract URL parameters
@@ -418,7 +416,7 @@ function extractOperations(collection: any, variables: Record<string, string>): 
       // Generate operation ID
       let operationId = itemName.toLowerCase().replace(/[^a-z0-9]/g, '-');
       operationId = getUniqueOperationName(operationId);
-      const { contentType, bodyType } = getContentTypeAndBodyType(item.request);
+      const { contentType: _contentType, bodyType } = getContentTypeAndBodyType(item.request);
       const headers = getHeadersForOperation(item.request, variables);
       const inputs = extractParameters(item.request, variables);
       const bodyInputs = extractRequestBody(item.request, itemName, method, path);

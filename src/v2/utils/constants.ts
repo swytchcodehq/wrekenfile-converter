@@ -55,6 +55,7 @@ export const YAML_DUMP_OPTIONS = {
 /**
  * Execution mode constants
  */
+export const EXECUTION_MODE_SYNC = 'sync';
 export const EXECUTION_MODE_ASYNC = 'async';
 
 /**

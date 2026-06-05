@@ -226,14 +226,6 @@ function extractAllStructNames(typeString: string): string[] {
 }
 
 /**
- * Extracts struct name from STRUCT(name) format
- */
-function extractStructName(typeString: string): string | null {
-  const match = typeString.match(/^STRUCT\(([^)]+)\)/) || typeString.match(/^\[\]STRUCT\(([^)]+)\)/);
-  return match ? match[1] : null;
-}
-
-/**
  * Generates a filename for the mini Wrekenfile
  */
 function generateFilename(endpoint: string): string {

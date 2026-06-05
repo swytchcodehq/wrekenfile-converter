@@ -4,13 +4,21 @@
   "description": "Convert OpenAPI and Postman specs into Wrekenfiles, with chunking for vector database storage",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "wrekenfile": "dist/v2/cli/cli-openapi-to-wrekenfile.js",
+    "wrekenfile-v2": "dist/v2/cli/cli-openapi-v2-to-wrekenfile.js",
+    "wrekenfile-postman": "dist/v2/cli/cli-postman-to-wrekenfile.js",
+    "wrekenfile-mini": "dist/v2/cli/cli-mini-wrekenfile-generator.js"
+  },
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
     "dev": "tsc --watch",
     "example": "node dist/example-usage.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -38,7 +46,8 @@
   "files": [
     "dist/**/*",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "specification/**/*"
   ],
   "exports": {
     ".": {
@@ -71,7 +80,8 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.10.5",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.1"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"
