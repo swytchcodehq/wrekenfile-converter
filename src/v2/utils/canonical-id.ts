@@ -227,11 +227,15 @@ export function computeCanonicalId(libraryName: string, httpMethod: string, path
   parts.push(verb);
 
   // MAX 4 SEGMENTS RULE: if exceeded, collapse to namespace.resource.verb
+  let rawId: string;
   if (parts.length > 4) {
-    return [parts[0], parts[1], parts[parts.length - 1]].join('.');
+    rawId = [parts[0], parts[1], parts[parts.length - 1]].join('.');
+  } else {
+    rawId = parts.join('.');
   }
 
-  return parts.join('.');
+  // Sanitize to remove special characters. Only alphanumeric, dot, dash, and underscore are allowed.
+  return rawId.replace(/[^a-zA-Z0-9.\-_]/g, '');
 }
 
 
