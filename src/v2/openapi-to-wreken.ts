@@ -1081,7 +1081,7 @@ function generateWrekenfile(spec: any, baseDir: string): string {
         existingCanonicalId: methodData.CANONICAL_ID,
       })
     );
-    const libraryName = spec?.info?.title || 'unknown';
+    const libraryName = spec?.info?.['x-swytchcode-namespace'] || spec?.info?.title || 'unknown';
     const canonicalIdMap = resolveCanonicalIds(canonicalInputs, libraryName);
 
     // Add CANONICAL_ID to each method

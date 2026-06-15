@@ -199,7 +199,10 @@ export function computeCanonicalId(libraryName: string, httpMethod: string, path
   const normalized = normalizePath(path);
   const segments = pathSegmentsWithoutParams(normalized);
 
-  const namespace = libraryName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'api';
+  let cleanName = libraryName;
+  cleanName = cleanName.replace(/_v?[0-9]+(_[0-9]+)*_?(json|yaml|yml)?$/ig, '');
+  cleanName = cleanName.replace(/_(com|net|org|io|co|uk|us|eu|ai|app|dev|api|me|info|biz|local)$/ig, '');
+  const namespace = cleanName.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase() || 'api';
   
   if (segments.length === 0) {
     return `${namespace}.resource.execute`;
