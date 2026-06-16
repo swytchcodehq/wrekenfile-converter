@@ -199,10 +199,22 @@ export function computeCanonicalId(libraryName: string, httpMethod: string, path
   const normalized = normalizePath(path);
   const segments = pathSegmentsWithoutParams(normalized);
 
-  let cleanName = libraryName;
-  cleanName = cleanName.replace(/_v?[0-9]+(_[0-9]+)*_?(json|yaml|yml)?$/ig, '');
-  cleanName = cleanName.replace(/_(com|net|org|io|co|uk|us|eu|ai|app|dev|api|me|info|biz|local)$/ig, '');
-  const namespace = cleanName.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase() || 'api';
+  let clean = (libraryName || 'api').toLowerCase();
+  clean = clean.replace(/^(apis?_)?openapi_/, '');
+  clean = clean.replace(/[^a-z0-9_]/g, '_');
+  
+  let prev = '';
+  while (clean !== prev) {
+    prev = clean;
+    clean = clean.replace(/_(com|net|org|io|co|uk|us|eu|ai|app|dev|me|info|biz|local|api)(_|$)/g, '_');
+    clean = clean.replace(/^(api|com|net|org|io|co|uk|us|eu|ai|app|dev|me|info|biz|local)_/g, '');
+  }
+  
+  clean = clean.replace(/_+/g, '_');
+  clean = clean.replace(/^_|_$/g, '');
+  
+  const namespaceParts = clean.split('_');
+  const namespace = [...new Set(namespaceParts)].join('_') || 'api';
   
   if (segments.length === 0) {
     return `${namespace}.resource.execute`;
@@ -277,7 +289,7 @@ export function resolveCanonicalIds(
   const pending: { methodId: string; httpMethod: string; endpoint: string; baseId: string }[] = [];
 
   for (const m of methods) {
-    if (m.existingCanonicalId && /^[a-z0-9]+\.[a-z0-9]+\.[a-zA-Z0-9]+$/.test(m.existingCanonicalId)) {
+    if (m.existingCanonicalId && /^[a-z0-9_\-]+\.[a-z0-9_\-]+\.[a-zA-Z0-9_\-]+$/.test(m.existingCanonicalId)) {
       const cid = m.existingCanonicalId;
       if (tryAssign(m.methodId, cid)) {
         result.set(m.methodId, cid);
