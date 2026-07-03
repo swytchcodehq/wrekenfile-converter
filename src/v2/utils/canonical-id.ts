@@ -222,10 +222,13 @@ export function computeCanonicalId(libraryName: string, httpMethod: string, path
 
   const method = (httpMethod || 'GET').toUpperCase();
 
-  // primary resource
-  const resource = singularize(segments[0] || 'resource');
+  // primary resource: skip a leading routing segment (api, admin, v1, etc.)
+  // when the path has more than one segment, so the resource is the noun
+  // that follows it rather than the routing prefix itself.
+  const resource =
+    segments.length > 1 ? singularize(segments[1]) : singularize(segments[0] || 'resource');
 
-  const remaining = segments.slice(1);
+  const remaining = segments.slice(2);
   const hasIdInPath =
     /\/\{[^}]+\}(\/|$)/.test(path) || /\/:[^/]+(\/|$)/.test(path);
 
