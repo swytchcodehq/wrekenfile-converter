@@ -325,7 +325,7 @@ export function resolveCanonicalIds(
         .replace(/-([a-z])/g, (_, c) => c.toUpperCase())
         .replace(/[^a-zA-Z0-9.]/g, '');
       const baseId = fallback || `${namespace}.method`;
-      let cid = baseId;
+      const cid = baseId;
       if (!tryAssign(m.methodId, cid)) {
           pending.push({ methodId: m.methodId, httpMethod: m.httpMethod || 'GET', endpoint: m.endpoint || '', baseId });
       } else {

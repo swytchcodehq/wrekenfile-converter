@@ -18,7 +18,7 @@ Convert OpenAPI and Postman specs into Wrekenfiles, with chunking for vector dat
 ## Development
 ```bash
 npm ci
-npm run lint    # tsc --noEmit (type-check)
+npm run lint    # tsc --noEmit + eslint .
 npm run build   # tsc (outputs to dist/)
 npm test        # vitest run
 ```

@@ -68,7 +68,7 @@ function extractFieldsFromObject(obj: any, depth = 0, prefix = ''): any[] {
 
   for (const [key, value] of Object.entries(obj)) {
     let type = 'ANY';
-    let required = 'OPTIONAL';
+    const required = 'OPTIONAL';
 
     // Handle duplicate keys
     let fieldName = key;

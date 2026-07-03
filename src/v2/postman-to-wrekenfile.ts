@@ -103,7 +103,7 @@ function extractFieldsFromObject(obj: any, depth = 0, prefix = ''): any[] {
 
   for (const [key, value] of Object.entries(obj)) {
     let type = 'ANY';
-    let required = false;
+    const required = false;
 
     // Handle duplicate keys
     let fieldName = key;
@@ -156,7 +156,7 @@ function loadEnvironmentFile(envPath: string): Record<string, string> {
     }
     
     return variables;
-  } catch (error) {
+  } catch {
     return {};
   }
 }

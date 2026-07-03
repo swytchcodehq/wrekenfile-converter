@@ -16,7 +16,9 @@
     "prebuild": "npm run clean",
     "dev": "tsc --watch",
     "example": "node dist/example-usage.js",
-    "lint": "tsc --noEmit",
+    "lint:types": "tsc --noEmit",
+    "lint:eslint": "eslint .",
+    "lint": "npm run lint:types && npm run lint:eslint",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
@@ -40,7 +42,10 @@
   "homepage": "https://wreken.com",
   "repository": {
     "type": "git",
-    "url": "https://gitlab.com/swytchcode/wrekenfile.git"
+    "url": "git+https://github.com/swytchcodehq/wrekenfile-converter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/swytchcodehq/wrekenfile-converter/issues"
   },
   "license": "MIT",
   "files": [
@@ -66,21 +71,23 @@
       "types": "./dist/v2/index.d.ts"
     },
     "./validator": {
-      "import": "./dist/wrekenfile-validator.js",
-      "require": "./dist/wrekenfile-validator.js",
-      "types": "./dist/wrekenfile-validator.d.ts"
+      "import": "./dist/v1/wrekenfile-validator.js",
+      "require": "./dist/v1/wrekenfile-validator.js",
+      "types": "./dist/v1/wrekenfile-validator.d.ts"
     },
     "./mini-generator": {
-      "import": "./dist/mini-wrekenfile-generator.js",
-      "require": "./dist/mini-wrekenfile-generator.js",
-      "types": "./dist/mini-wrekenfile-generator.d.ts"
+      "import": "./dist/v1/mini-wrekenfile-generator.js",
+      "require": "./dist/v1/mini-wrekenfile-generator.js",
+      "types": "./dist/v1/mini-wrekenfile-generator.d.ts"
     }
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.10.5",
+    "eslint": "^10.6.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3",
+    "typescript-eslint": "^8.62.1",
     "vitest": "^4.1.1"
   },
   "dependencies": {

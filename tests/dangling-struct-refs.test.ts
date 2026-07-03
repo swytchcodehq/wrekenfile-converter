@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { describe, it, expect } from 'vitest';
 import { load as yamlLoad } from 'js-yaml';
 import { generateWrekenfile } from '../src/v2/openapi-to-wreken';
@@ -258,8 +260,6 @@ describe('dangling STRUCT reference regressions', () => {
   });
 
   it('podcastindex spec has zero dangling STRUCT references', () => {
-    const fs = require('fs');
-    const path = require('path');
     const specPath = path.join(__dirname, '..', 'demo', 'podcastindex-api.json');
     if (!fs.existsSync(specPath)) return; // demo spec absent in isolated environments
     const spec = JSON.parse(fs.readFileSync(specPath, 'utf-8'));
