@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import * as yaml from 'js-yaml';
 import {
   cleanYaml,
   checkYamlForHiddenChars,
@@ -168,7 +169,6 @@ describe('generateYamlString', () => {
   });
 
   it('produces parseable YAML', () => {
-    const yaml = require('js-yaml');
     const data = { key: 'value', nested: { list: [1, 2, 3] } };
     const result = generateYamlString(data);
     const parsed = yaml.load(result);

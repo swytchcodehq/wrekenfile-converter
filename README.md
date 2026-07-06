@@ -4,24 +4,24 @@
 
 Convert OpenAPI and Postman specs into execution-first Wrekenfiles for AI agents and LLM code generation.
 
-[![GitHub stars](https://img.shields.io/github/stars/conorbronsdon/wrekenfile-converter?style=social)](https://github.com/conorbronsdon/wrekenfile-converter/stargazers)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/wrekenfile-converter?style=flat-square)](https://www.npmjs.com/package/wrekenfile-converter)
-[![CI](https://github.com/conorbronsdon/wrekenfile-converter/actions/workflows/ci.yml/badge.svg)](https://github.com/conorbronsdon/wrekenfile-converter/actions/workflows/ci.yml)
+[![CI](https://github.com/swytchcodehq/wrekenfile-converter/actions/workflows/ci.yml/badge.svg)](https://github.com/swytchcodehq/wrekenfile-converter/actions/workflows/ci.yml)
 
 [![Wreken Spec](https://img.shields.io/badge/Wreken-v2.0.2-purple?style=flat-square)](https://wreken.com)
 [![Swytchcode](https://img.shields.io/badge/by-Swytchcode-orange?style=flat-square)](https://www.swytchcode.com/)
 
-[Demo](https://github.com/conorbronsdon/wrekenfile-demo) | [Wreken Spec](https://wreken.com) | [npm](https://www.npmjs.com/package/wrekenfile-converter) | [Issues](https://github.com/conorbronsdon/wrekenfile-converter/issues)
+[Demo](./demo) | [Wreken Spec](https://wreken.com) | [npm](https://www.npmjs.com/package/wrekenfile-converter) | [Issues](https://github.com/swytchcodehq/wrekenfile-converter/issues)
 
 </div>
 
 ---
 
 A TypeScript/JavaScript library for converting OpenAPI specifications (v2 and v3) and Postman collections into **Wrekenfiles**, declarative YAML artifacts that act as the single source of truth for API methods, workflows, headers, and responses.
-Generated Wrekenfiles are compliant with the [**Wreken Specification v2.0.2**](./src/v2/wreken_specification_v_2_0%202.md) and support advanced mini-chunking for vector database storage and AI context management.
+Generated Wrekenfiles are compliant with the [**Wreken Specification v2.0.2**](./specification/wreken_specification_v2.md) and support advanced mini-chunking for vector database storage and AI context management.
 
-**See a real-world example:** [wrekenfile-demo](https://github.com/conorbronsdon/wrekenfile-demo) — Podcast Index API (50 endpoints, 228 schemas) converted to a full Wrekenfile + 52 mini-wrekenfiles.
+**See a real-world example:** [`demo/`](./demo) — Podcast Index API (50 endpoints, 228 schemas) converted to a full Wrekenfile + 52 mini-wrekenfiles.
 
 ## Features
 
@@ -181,7 +181,7 @@ METHODS:
         STATUS: 200
 ```
 
-The full deterministic spec (for re-implementing in SDKs/other languages) is documented in [`specification/canonical_id.md`](./specification/canonical_id.md).
+The format is fully deterministic — derived only from `HTTP.METHOD` and `HTTP.ENDPOINT` as shown above — so it can be re-implemented consistently in SDKs or other languages without needing an LLM.
 
 ## Parameter Structure
 
@@ -390,17 +390,19 @@ dist/                               # Compiled JavaScript + types
 └── v2/
 ```
 
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the dev workflow, branching model, and CI requirements.
+
 ## About
 
 The [Wreken specification](https://wreken.com) and wrekenfile-converter are created by [Swytchcode Technologies](https://www.swytchcode.com/). Wreken is an execution-first YAML spec for converting APIs into LLM-friendly tool definitions. Learn more at [wreken.com](https://wreken.com).
 
-This fork is maintained by [Conor Bronsdon](https://github.com/conorbronsdon) and includes CLI improvements, test coverage, and a [real-world demo](https://github.com/conorbronsdon/wrekenfile-demo) of the converter against the Podcast Index API as testing for the [Chain of Thought Podcast](https://chainofthought.transistor.fm/).
+## Acknowledgments
+
+Thanks to [Conor Bronsdon](https://github.com/conorbronsdon) for his contributions to this project, including CLI improvements, test coverage, and the real-world [Podcast Index API demo](./demo) used to validate the converter against a large, complex public API.
 
 ---
-
-## Disclaimer
-
-*All views, opinions, and statements expressed on this account are solely my own and are made in my personal capacity. They do not reflect, and should not be construed as reflecting, the views, positions, or policies of Modular. This account is not affiliated with, authorized by, or endorsed by Modular in any way.*
 
 ## License
 

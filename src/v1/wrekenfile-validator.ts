@@ -133,16 +133,16 @@ function parseYamlRobust(fileContent: string): WrekenfileStructure | null {
   try {
     // First try normal YAML parsing
     return yaml.load(fileContent) as WrekenfileStructure;
-  } catch (error) {
+  } catch {
     console.log('Standard YAML parsing failed, attempting to fix formatting...');
-    
+
     try {
       // Try to fix common YAML formatting issues
       const fixedContent = fixYamlContent(fileContent);
-      
+
       // Try parsing the fixed content
       return yaml.load(fixedContent) as WrekenfileStructure;
-    } catch (secondError) {
+    } catch {
       console.log('Could not parse YAML even after fixing formatting');
       return null;
     }

@@ -101,10 +101,6 @@ describe('OpenAPI v3 → Wrekenfile converter', () => {
     );
     expect(listPets).toBeDefined();
     if (listPets?.INPUTS) {
-      const limitInput = listPets.INPUTS.find((i: any) => {
-        const key = Object.keys(i)[0];
-        return key === 'limit' || i[key]?.NAME === 'limit';
-      });
       // limit parameter should exist somewhere in inputs
       expect(listPets.INPUTS.length).toBeGreaterThan(0);
     }
