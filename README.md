@@ -23,6 +23,14 @@ Generated Wrekenfiles are compliant with the [**Wreken Specification v2.0.2**](.
 
 **See a real-world example:** [`demo/`](./demo) — Podcast Index API (50 endpoints, 228 schemas) converted to a full Wrekenfile + 52 mini-wrekenfiles.
 
+## Demo
+
+<div align="center">
+<img src="./docs/demo.gif" width="700" alt="Terminal recording: listing the demo/ directory, viewing the head of the Podcast Index OpenAPI spec, running the wrekenfile-converter CLI against it, and viewing the head of the generated Wrekenfile YAML output.">
+</div>
+
+Recorded with [VHS](https://github.com/charmbracelet/vhs) from the committed [`docs/demo.tape`](./docs/demo.tape) — run `vhs docs/demo.tape` after `npm ci && npm run build` to regenerate it yourself.
+
 ## Features
 
 - **Multi-format Support**: Convert OpenAPI v2 (Swagger), OpenAPI v3, and Postman collections
