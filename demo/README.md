@@ -26,3 +26,12 @@ node node_modules/wrekenfile-converter/dist/v2/cli/cli-mini-wrekenfile-generator
   --input demo/podcastindex-wrekenfile.yaml \
   --output demo/mini-wrekenfiles
 ```
+
+## Known issues in this fixture
+
+The checked-in `podcastindex-wrekenfile.yaml` converts cleanly (all 50 endpoints / 52 methods present, CANONICAL_IDs and auth headers correctly extracted), but the response side of the conversion has a gap:
+
+- **Response types are all `VOID`.** The source spec defines 228 response schemas, but the converter doesn't carry them into the output — every one of the 52 methods gets `TYPE: VOID` for its response (52 of the 201 `TYPE:` entries in the file). An LLM can call the API from this Wrekenfile but has no way to know the shape of what comes back.
+- **`MODE: async` on every method.** The Podcast Index API is a plain synchronous REST API, so this doesn't match how the endpoints actually behave. Note: `src/v2/openapi-to-wreken.ts` now hardcodes `EXECUTION_MODE_SYNC` for HTTP methods, so this fixture likely predates that change and may just need regenerating — that requires a build and wasn't attempted here.
+
+Filed as reference for anyone extending the converter's response-schema handling.
