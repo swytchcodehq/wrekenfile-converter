@@ -59,13 +59,11 @@ const IRREGULAR_SINGULAR: Record<string, string> = {
  */
 function normalizePath(path: string): string {
   let p = path.replace(/^\/+/, '').trim();
-  // Strip version prefix: /v1/, /v2/, /v3/
-  p = p.replace(/^v\d+\//i, '');
+  p = p.replace(/(^|\/)v\d+\//i, '$1');
   p = p.replace(/\.json$/i, '');
   p = p.replace(/\.xml$/i, '');
   return p.replace(/\/+$/, '');
 }
-
 /**
  * Split path into segments and remove path-parameter segments ({id}, {foo}, :id, etc).
  */
@@ -292,7 +290,7 @@ export function resolveCanonicalIds(
   const pending: { methodId: string; httpMethod: string; endpoint: string; baseId: string }[] = [];
 
   for (const m of methods) {
-    if (m.existingCanonicalId && /^[a-z0-9_\-]+\.[a-z0-9_\-]+\.[a-zA-Z0-9_\-]+$/.test(m.existingCanonicalId)) {
+   if (m.existingCanonicalId && /^[a-z0-9_\-]+\.[a-z0-9_\-]+\.[a-zA-Z0-9_\-]+(\.[a-zA-Z0-9_\-]+)?$/.test(m.existingCanonicalId)) {
       const cid = m.existingCanonicalId;
       if (tryAssign(m.methodId, cid)) {
         result.set(m.methodId, cid);
