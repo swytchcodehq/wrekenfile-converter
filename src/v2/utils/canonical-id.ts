@@ -59,13 +59,11 @@ const IRREGULAR_SINGULAR: Record<string, string> = {
  */
 function normalizePath(path: string): string {
   let p = path.replace(/^\/+/, '').trim();
-  // Strip version prefix: /v1/, /v2/, /v3/
-  p = p.replace(/^v\d+\//i, '');
+  p = p.split('/').filter((seg) => !/^v\d+$/i.test(seg)).join('/');
   p = p.replace(/\.json$/i, '');
   p = p.replace(/\.xml$/i, '');
   return p.replace(/\/+$/, '');
 }
-
 /**
  * Split path into segments and remove path-parameter segments ({id}, {foo}, :id, etc).
  */
@@ -292,7 +290,7 @@ export function resolveCanonicalIds(
   const pending: { methodId: string; httpMethod: string; endpoint: string; baseId: string }[] = [];
 
   for (const m of methods) {
-    if (m.existingCanonicalId && /^[a-z0-9_\-]+\.[a-z0-9_\-]+\.[a-zA-Z0-9_\-]+$/.test(m.existingCanonicalId)) {
+   if (m.existingCanonicalId && /^[a-z0-9_\-]+\.[a-z0-9_\-]+\.[a-zA-Z0-9_\-]+(\.[a-zA-Z0-9_\-]+)?$/.test(m.existingCanonicalId)) {
       const cid = m.existingCanonicalId;
       if (tryAssign(m.methodId, cid)) {
         result.set(m.methodId, cid);
@@ -339,15 +337,18 @@ export function resolveCanonicalIds(
 
   // Resolve pending collisions: use counter suffix for uniqueness (no hashes)
   for (const p of pending) {
-    let finalCandidate = p.baseId;
-    let attempts = 1;
-    while (!tryAssign(p.methodId, finalCandidate) && attempts < 100) {
-      finalCandidate = `${p.baseId}.${attempts}`;
-      attempts++;
-    }
-    result.set(p.methodId, finalCandidate);
+  const baseParts = p.baseId.split('.');
+  let finalCandidate = p.baseId;
+  let attempts = 1;
+  while (!tryAssign(p.methodId, finalCandidate) && attempts < 100) {
+    finalCandidate =
+      baseParts.length >= 4
+        ? [...baseParts.slice(0, -1), `${baseParts[baseParts.length - 1]}${attempts}`].join('.')
+        : `${p.baseId}.${attempts}`;
+    attempts++;
   }
-
+  result.set(p.methodId, finalCandidate);
+}
   // Final validation: ensure no duplicates (safety check)
   const seen = new Map<string, string>(); // canonicalId -> first methodId that used it
   const duplicates = new Map<string, string>(); // methodId -> canonicalId (duplicate)
