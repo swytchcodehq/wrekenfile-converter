@@ -1011,12 +1011,63 @@ function renameMethodsToCanonicalId(methods: Record<string, any>): Record<string
   return renamed;
 }
 
+function preprocessFormDataParameters(spec: any) {
+  if (!spec.paths || typeof spec.paths !== 'object') return;
+  for (const pathMethods of Object.values<any>(spec.paths)) {
+    for (const op of Object.values<any>(pathMethods)) {
+      if (!op || typeof op !== 'object' || !op.parameters) continue;
+      
+      const consumes = op.consumes || spec.consumes || [CONTENT_TYPE_JSON];
+      if (consumes.includes(CONTENT_TYPE_JSON)) {
+        const formDataParams = op.parameters.filter((p: any) => p && typeof p === 'object' && p.in === 'formData');
+        const bodyParam = op.parameters.find((p: any) => p && typeof p === 'object' && p.in === 'body');
+        
+        if (formDataParams.length > 0 && !bodyParam) {
+          // Convert formData params into a single body param with a schema
+          const schemaProperties: any = {};
+          const requiredProps: string[] = [];
+          
+          for (const param of formDataParams) {
+            schemaProperties[param.name] = {
+              type: param.type || 'string',
+            };
+            if (param.description) schemaProperties[param.name].description = param.description;
+            if (param.format) schemaProperties[param.name].format = param.format;
+            if (param.default !== undefined) schemaProperties[param.name].default = param.default;
+            if (param.required) requiredProps.push(param.name);
+          }
+          
+          const newBodyParam: any = {
+            in: 'body',
+            name: 'body',
+            description: 'Synthetic body parameter created from formData fields',
+            required: requiredProps.length > 0,
+            schema: {
+              type: 'object',
+              properties: schemaProperties
+            }
+          };
+          if (requiredProps.length > 0) {
+            newBodyParam.schema.required = requiredProps;
+          }
+          
+          // Remove formData params and add the new body param
+          op.parameters = op.parameters.filter((p: any) => p && typeof p === 'object' && p.in !== 'formData');
+          op.parameters.push(newBodyParam);
+        }
+      }
+    }
+  }
+}
 
 function generateWrekenfile(spec: any, baseDir: string): string {
   try {
     // Validate inputs
     validateOpenApiV2Spec(spec);
     validateBaseDir(baseDir);
+
+    // Preprocess formData parameters into structural bodies for JSON-supporting endpoints
+    preprocessFormDataParameters(spec);
 
     const defaults = extractSecurityDefaults(spec);
     const methods = extractMethods(spec, baseDir);
