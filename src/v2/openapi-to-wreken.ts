@@ -480,7 +480,7 @@ function getContentTypeAndBodyType(op: any): { contentType: string; bodyType: st
   }
 
   const contentTypes = Object.keys(requestBody.content);
-  const contentType = contentTypes[0] || CONTENT_TYPE_JSON;
+  const contentType = contentTypes.includes(CONTENT_TYPE_JSON) ? CONTENT_TYPE_JSON : (contentTypes[0] || CONTENT_TYPE_JSON);
   
   let bodyType = BODYTYPE_RAW;
   if (contentType === CONTENT_TYPE_FORM_DATA) {
@@ -499,7 +499,7 @@ function getAcceptContentType(op: any): string {
     if (statusCode >= 200 && statusCode < 300 && response.content) {
       const contentTypes = Object.keys(response.content);
       if (contentTypes.length > 0) {
-        return contentTypes[0];
+        return contentTypes.includes(CONTENT_TYPE_JSON) ? CONTENT_TYPE_JSON : contentTypes[0];
       }
     }
   }
