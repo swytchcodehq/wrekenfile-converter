@@ -464,7 +464,7 @@ function getContentTypeAndBodyType(op: any, spec: any): { contentType: string; b
   
   // OpenAPI v2 determines content type from consumes array or defaults
   const consumes = op.consumes || spec.consumes || [CONTENT_TYPE_JSON];
-  const contentType = consumes[0] || CONTENT_TYPE_JSON;
+  const contentType = consumes.includes(CONTENT_TYPE_JSON) ? CONTENT_TYPE_JSON : (consumes[0] || CONTENT_TYPE_JSON);
   
   let bodyType = BODYTYPE_RAW;
   if (contentType === CONTENT_TYPE_FORM_DATA) {
@@ -484,7 +484,7 @@ function getAcceptContentType(op: any, spec: any): string {
       // OpenAPI v2 uses produces array
       const produces = op.produces || spec.produces || [CONTENT_TYPE_JSON];
       if (produces.length > 0) {
-        return produces[0];
+        return produces.includes(CONTENT_TYPE_JSON) ? CONTENT_TYPE_JSON : produces[0];
       }
     }
   }
