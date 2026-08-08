@@ -659,7 +659,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
   if (op.parameters) {
     for (const param of op.parameters) {
       if (param && typeof param === 'object' && param.in === 'formData') {
-        const type = param.type === 'file' ? 'STRING' : getTypeFromSchema({ type: param.type, format: param.format }, spec, baseDir);
+        const type = param.type === 'file' ? 'STRING' : getTypeFromSchema({ type: param.type, format: param.format, items: param.items }, spec, baseDir);
         // FormData parameters default to false (optional) if not specified
         const isRequired = param.required === true;
         const hasDefault = param.default !== undefined;
@@ -1011,12 +1011,94 @@ function renameMethodsToCanonicalId(methods: Record<string, any>): Record<string
   return renamed;
 }
 
+function preprocessFormDataParameters(spec: any) {
+  if (!spec.paths || typeof spec.paths !== 'object') return;
+  const validMethods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options', 'trace'];
+  
+  for (const pathMethods of Object.values<any>(spec.paths)) {
+    const pathLevelParams = pathMethods.parameters || [];
+    
+    for (const [method, op] of Object.entries<any>(pathMethods)) {
+      if (!validMethods.includes(method.toLowerCase()) || !op || typeof op !== 'object') continue;
+      
+      const opParams = op.parameters || [];
+      
+      // Resolve parameters: operation overrides path
+      const mergedParamsMap = new Map();
+      for (const p of pathLevelParams) {
+        if (p && typeof p === 'object' && p.name && p.in) {
+          mergedParamsMap.set(`${p.name}-${p.in}`, p);
+        }
+      }
+      for (const p of opParams) {
+        if (p && typeof p === 'object' && p.name && p.in) {
+          mergedParamsMap.set(`${p.name}-${p.in}`, p);
+        }
+      }
+      let allParams = Array.from(mergedParamsMap.values());
+      
+      const consumes = op.consumes || spec.consumes || [CONTENT_TYPE_JSON];
+      if (consumes.includes(CONTENT_TYPE_JSON)) {
+        const formDataParams = allParams.filter((p: any) => p.in === 'formData');
+        const bodyParam = allParams.find((p: any) => p.in === 'body');
+        
+        if (formDataParams.length > 0 && !bodyParam) {
+          // Convert formData params into a single body param with a schema
+          const schemaProperties: any = {};
+          const requiredProps: string[] = [];
+          
+          for (const param of formDataParams) {
+            schemaProperties[param.name] = {
+              type: param.type || 'string',
+            };
+            if (param.description) schemaProperties[param.name].description = param.description;
+            if (param.format) schemaProperties[param.name].format = param.format;
+            if (param.default !== undefined) schemaProperties[param.name].default = param.default;
+            if (param.required) requiredProps.push(param.name);
+            
+            // CodeRabbit Fix: Include items for array types
+            if (param.type === 'array' && param.items) {
+              schemaProperties[param.name].items = param.items;
+            }
+          }
+          
+          const newBodyParam: any = {
+            in: 'body',
+            name: 'body',
+            description: 'Synthetic body parameter created from formData fields',
+            required: requiredProps.length > 0,
+            schema: {
+              type: 'object',
+              properties: schemaProperties
+            }
+          };
+          if (requiredProps.length > 0) {
+            newBodyParam.schema.required = requiredProps;
+          }
+          
+          // Remove formData params and add the new body param
+          allParams = allParams.filter((p: any) => p.in !== 'formData');
+          allParams.push(newBodyParam);
+        }
+      }
+      
+      // Update op.parameters with the resolved params
+      op.parameters = allParams;
+    }
+    
+    // Clear path-level parameters so they aren't duplicated by subsequent logic
+    delete pathMethods.parameters;
+  }
+}
 
 function generateWrekenfile(spec: any, baseDir: string): string {
   try {
     // Validate inputs
     validateOpenApiV2Spec(spec);
     validateBaseDir(baseDir);
+
+    // Preprocess formData parameters into structural bodies for JSON-supporting endpoints
+    preprocessFormDataParameters(spec);
 
     const defaults = extractSecurityDefaults(spec);
     const methods = extractMethods(spec, baseDir);
@@ -1104,6 +1186,9 @@ function generateWrekenfileWithStats(spec: any, baseDir: string): { yaml: string
   try {
     validateOpenApiV2Spec(spec);
     validateBaseDir(baseDir);
+
+    // Preprocess formData parameters into structural bodies for JSON-supporting endpoints
+    preprocessFormDataParameters(spec);
 
     const defaults = extractSecurityDefaults(spec);
     const methods = extractMethods(spec, baseDir);
