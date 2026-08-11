@@ -22,17 +22,17 @@ describe('oneOf/anyOf handling', () => {
     // Should have the discriminator field
     const discriminatorField = petInputStruct.find((f: any) => f.name === 'petType');
     expect(discriminatorField).toBeDefined();
-    expect(discriminatorField.type).toBe('STRING');
+    expect(discriminatorField.TYPE).toBe('STRING');
     expect(discriminatorField.REQUIRED).toBe(true);
 
     // Should have variant references to Cat and Dog
     const catVariant = petInputStruct.find((f: any) => f.name === 'variant_Cat');
     expect(catVariant).toBeDefined();
-    expect(catVariant.type).toBe('STRUCT(Cat)');
+    expect(catVariant.TYPE).toBe('STRUCT(Cat)');
 
     const dogVariant = petInputStruct.find((f: any) => f.name === 'variant_Dog');
     expect(dogVariant).toBeDefined();
-    expect(dogVariant.type).toBe('STRUCT(Dog)');
+    expect(dogVariant.TYPE).toBe('STRUCT(Dog)');
   });
 
   it('creates union struct with primitive type variants (anyOf)', () => {
@@ -68,11 +68,11 @@ describe('oneOf/anyOf handling', () => {
 
     const stringVariant = mixedType.find((f: any) => f.name === 'variant_0');
     expect(stringVariant).toBeDefined();
-    expect(stringVariant.type).toBe('STRING');
+    expect(stringVariant.TYPE).toBe('STRING');
 
     const integerVariant = mixedType.find((f: any) => f.name === 'variant_1');
     expect(integerVariant).toBeDefined();
-    expect(integerVariant.type).toBe('INT');
+    expect(integerVariant.TYPE).toBe('INT');
   });
 
   it('includes Cat and Dog structs referenced by union variants', () => {

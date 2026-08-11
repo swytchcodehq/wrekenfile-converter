@@ -199,7 +199,7 @@ describe('dangling STRUCT reference regressions', () => {
     expect(responseStructName).toBeDefined();
     const responseStruct = parsed.STRUCTS[responseStructName!];
     const categoriesField = responseStruct.find((f: any) => f.name === 'categories');
-    expect(categoriesField.type).toBe('OBJECT');
+    expect(categoriesField.TYPE).toBe('STRUCT(categories)');
   });
 
   it('gives per-operation truly-inline error schemas operation-scoped names', () => {

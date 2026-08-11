@@ -1,7 +1,7 @@
 // openapi-v2-swagger-to-wrekenfile-v2.ts
 // Converts OpenAPI v2 (Swagger) specifications to Wrekenfile v2.0.1 format
-import * as fs from 'fs';
-import * as path from 'path';
+
+
 import { load } from 'js-yaml';
 import { generateYamlString } from './utils/yaml-utils';
 import { 
@@ -21,438 +21,26 @@ import {
   HTTP_METHODS_WITH_BODY,
 } from './utils/constants';
 import { generateReturnVarName, generateErrorWhen } from './utils/response-utils';
-import { mapOpenApiType } from './utils/type-utils';
 import { generateOpenApiSummary } from './utils/summary-utils';
 import { validateOpenApiV2Spec, validateBaseDir, logError, createConverterError } from './utils/error-utils';
-import { resolveCanonicalIds, computeCanonicalId, type MethodCanonicalInput } from './utils/canonical-id';
+import { resolveCanonicalIds, type MethodCanonicalInput } from './utils/canonical-id';
 import { filterStructsByUsage } from './utils/struct-utils';
 import { computeConversionStats, type ConversionStats } from './utils/conversion-stats';
 
-const externalRefCache: Record<string, any> = {};
+import { RefResolver } from './utils/ref-utils';
+import { 
+  extractStructs, 
+  getTypeFromSchema, 
+  generateStructName, 
+  getErrorStructName 
+} from './utils/schema-utils';
+
+
 
 // Re-export for backward compatibility
-const mapType = mapOpenApiType;
+
 const generateSummary = generateOpenApiSummary;
 
-function resolveRef(ref: string, spec: any, baseDir: string): any {
-  if (!ref || typeof ref !== 'string') {
-    throw createConverterError(
-      `Invalid $ref: must be a non-empty string`,
-      "INVALID_REF",
-      { ref, refType: typeof ref }
-    );
-  }
-
-  if (ref.startsWith('#/')) {
-    const pathParts = ref.split('/').slice(1);
-    let result = spec;
-    for (const part of pathParts) {
-      if (result === undefined || result === null) {
-        throw createConverterError(
-          `Failed to resolve $ref: ${ref} - path segment '${part}' not found`,
-          "REF_RESOLUTION_FAILED",
-          { ref, pathParts, currentPath: pathParts.slice(0, pathParts.indexOf(part) + 1) }
-        );
-      }
-      result = result[part];
-    }
-    return result;
-  }
-
-  const [filePath, internal] = ref.split('#');
-  if (!filePath) {
-    throw createConverterError(
-      `Invalid external $ref: missing file path in ${ref}`,
-      "INVALID_EXTERNAL_REF",
-      { ref }
-    );
-  }
-
-  const fullPath = path.resolve(baseDir, filePath);
-  if (!fs.existsSync(fullPath)) {
-    throw createConverterError(
-      `External $ref file not found: ${fullPath}`,
-      "EXTERNAL_REF_FILE_NOT_FOUND",
-      { ref, filePath, baseDir, fullPath }
-    );
-  }
-
-  try {
-    if (!externalRefCache[fullPath]) {
-      const content = fs.readFileSync(fullPath, 'utf8');
-      externalRefCache[fullPath] = load(content);
-    }
-    
-    if (internal) {
-      const internalPath = internal.split('/').slice(1);
-      let result = externalRefCache[fullPath];
-      for (const part of internalPath) {
-        if (result === undefined || result === null) {
-          throw createConverterError(
-            `Failed to resolve internal $ref: ${internal} in file ${fullPath}`,
-            "INTERNAL_REF_RESOLUTION_FAILED",
-            { ref, internal, filePath, internalPath }
-          );
-        }
-        result = result[part];
-      }
-      return result;
-    }
-    return externalRefCache[fullPath];
-  } catch (err: any) {
-    if (err.code && err.code.startsWith('REF_')) {
-      throw err;
-    }
-    throw createConverterError(
-      `Error loading external $ref file: ${fullPath}`,
-      "EXTERNAL_REF_LOAD_ERROR",
-      { ref, filePath, fullPath },
-      err
-    );
-  }
-}
-
-/**
- * Build a Wrekenfile map value-type string from a Swagger v2
- * `additionalProperties` value.
- */
-function mapSchemaToMapType(ap: any, spec: any, baseDir: string): string {
-  if (ap === true || !ap || typeof ap !== 'object') {
-    return 'map[STRING]ANY';
-  }
-  if (ap.$ref) {
-    const resolved = resolveRef(ap.$ref, spec, baseDir);
-    if (resolved && resolved.type && resolved.type !== 'object') {
-      return `map[STRING]${mapType(resolved.type, resolved.format)}`;
-    }
-    return `map[STRING]STRUCT(${ap.$ref.split('/').pop()})`;
-  }
-  if (ap.type === 'array' && ap.items) {
-    if (ap.items.$ref) {
-      const resolvedItems = resolveRef(ap.items.$ref, spec, baseDir);
-      if (resolvedItems && resolvedItems.type && resolvedItems.type !== 'object') {
-        return `map[STRING][]${mapType(resolvedItems.type, resolvedItems.format)}`;
-      }
-      return `map[STRING][]STRUCT(${ap.items.$ref.split('/').pop()})`;
-    }
-    if (ap.items.type) {
-      return `map[STRING][]${mapType(ap.items.type, ap.items.format)}`;
-    }
-    return 'map[STRING][]ANY';
-  }
-  if (ap.type) {
-    return `map[STRING]${mapType(ap.type, ap.format)}`;
-  }
-  return 'map[STRING]ANY';
-}
-
-function getTypeFromSchema(schema: any, spec: any, baseDir: string): string {
-  if (!schema || typeof schema !== 'object') {
-    return 'ANY';
-  }
-  if (schema.$ref) {
-    const resolvedSchema = resolveRef(schema.$ref, spec, baseDir);
-    if (resolvedSchema && resolvedSchema.type && resolvedSchema.type !== 'object') {
-      return mapType(resolvedSchema.type, resolvedSchema.format);
-    }
-    // Resolve propertyless object schemas at the $ref site to avoid dangling
-    // STRUCT(Foo) references for schemas that will never produce fields.
-    if (resolvedSchema && resolvedSchema.type === 'object' && !resolvedSchema.properties) {
-      if (resolvedSchema.additionalProperties) {
-        return mapSchemaToMapType(resolvedSchema.additionalProperties, spec, baseDir);
-      }
-      return 'OBJECT';
-    }
-    const refName = schema.$ref.split('/').pop();
-    return `STRUCT(${refName})`;
-  }
-  if (schema.type === 'array') {
-    if (schema.items && schema.items.$ref) {
-      const resolvedItems = resolveRef(schema.items.$ref, spec, baseDir);
-      if (resolvedItems && resolvedItems.type && resolvedItems.type !== 'object') {
-        return `[]${mapType(resolvedItems.type, resolvedItems.format)}`;
-      }
-      const refName = schema.items.$ref.split('/').pop();
-      return `[]STRUCT(${refName})`;
-    } else if (schema.items) {
-      return `[]${mapType(schema.items.type, schema.items.format)}`;
-    } else {
-      return '[]ANY';
-    }
-  }
-  if (schema.type === 'object') {
-    // Check if it has properties or is a generic object
-    if (schema.properties || schema.additionalProperties) {
-      // If it has additionalProperties, it's a map
-      if (schema.additionalProperties) {
-        const valueType = typeof schema.additionalProperties === 'object' && schema.additionalProperties.type
-          ? mapType(schema.additionalProperties.type, schema.additionalProperties.format)
-          : 'ANY';
-        return `map[STRING]${valueType}`;
-      }
-      // Otherwise it's a struct (will be defined in STRUCTS)
-      return 'OBJECT';
-    }
-    // Generic object without properties
-    return 'OBJECT';
-  }
-  if (schema.type && schema.type !== 'object') {
-    return mapType(schema.type, schema.format);
-  }
-  return 'ANY';
-}
-
-function parseSchema(name: string, schema: any, spec: any, baseDir: string, depth = 0): any[] {
-  if (depth > 3) return [];
-  if (schema && typeof schema === 'object' && schema.$ref) {
-    return parseSchema(name, resolveRef(schema.$ref, spec, baseDir), spec, baseDir, depth + 1);
-  }
-  if (schema && typeof schema === 'object' && schema.allOf) {
-    return schema.allOf.flatMap((s: any) => parseSchema(name, s, spec, baseDir, depth + 1));
-  }
-  if (schema && typeof schema === 'object' && (schema.oneOf || schema.anyOf)) {
-    // Enumerate union variants with their actual types
-    const variants = schema.oneOf || schema.anyOf;
-    const fields: any[] = [];
-    // Add discriminator field if present
-    if (schema.discriminator?.propertyName) {
-      fields.push({
-        name: schema.discriminator.propertyName,
-        type: 'STRING',
-        REQUIRED: true,
-      });
-    }
-    for (let i = 0; i < variants.length; i++) {
-      const variant = variants[i];
-      if (variant && typeof variant === 'object' && variant.$ref) {
-        const refName = typeof variant.$ref === 'string' ? variant.$ref.split('/').pop() : undefined;
-        const variantType = getTypeFromSchema(variant, spec, baseDir) || TYPE_ANY;
-        fields.push({
-          name: refName ? `variant_${refName}` : `variant_${i}`,
-          type: variantType,
-          REQUIRED: false,
-        });
-      } else if (variant && typeof variant === 'object' && variant.type && variant.type !== 'object') {
-        fields.push({
-          name: `variant_${i}`,
-          type: mapType(variant.type, variant.format),
-          REQUIRED: false,
-        });
-      } else {
-        fields.push({
-          name: `variant_${i}`,
-          type: 'ANY',
-          REQUIRED: false,
-        });
-      }
-    }
-    return fields.length > 0 ? fields : [{
-      name: 'value',
-      type: 'ANY',
-      REQUIRED: false,
-    }];
-  }
-
-  const fields: any[] = [];
-
-  if (schema && typeof schema === 'object' && schema.discriminator?.propertyName) {
-    fields.push({
-      name: schema.discriminator.propertyName,
-      type: 'STRING',
-      REQUIRED: true,
-    });
-  }
-
-  // Handle simple types (string, integer, etc.) - these should not create structs
-  if (schema && typeof schema === 'object' && schema.type && schema.type !== 'object' && schema.type !== 'array') {
-    return [];
-  }
-
-  if (schema && typeof schema === 'object' && schema.type === 'object' && schema.properties) {
-    for (const [key, prop] of Object.entries<any>(schema.properties)) {
-      const type = getTypeFromSchema(prop, spec, baseDir);
-      
-      // Use the required field from the OpenAPI spec
-      const required = (schema.required || []).includes(key);
-      
-      const field: any = {
-        name: key,
-        type,
-        REQUIRED: required,
-      };
-
-      // Add comment if description exists
-      if (prop && typeof prop === 'object' && prop.description) {
-        field.comment = prop.description;
-      }
-      
-      fields.push(field);
-    }
-  }
-
-  return fields;
-}
-
-function generateStructName(_operationId: string, method: string, path: string, suffix: string): string {
-  // Use canonical ID as the base for inline request/response struct names
-  const canonicalId = computeCanonicalId('api', method.toUpperCase(), path);
-  return `${canonicalId}${suffix}`;
-}
-
-/**
- * Pick a struct name for a Swagger v2 error response whose schema is inline
- * (no `$ref`). When the response object itself is a `$ref` to `#/responses/X`,
- * the returned name is stable across all call sites so one definition is
- * referenced from every operation.
- */
-function getErrorStructName(rawResponse: any, op: any, code: string): string {
-  if (rawResponse && rawResponse.$ref && typeof rawResponse.$ref === 'string') {
-    const key = rawResponse.$ref.split('/').pop() || '';
-    if (/^[0-9]+$/.test(key)) {
-      return `Error${key}`;
-    }
-    if (key) {
-      return `Response_${key}`;
-    }
-  }
-  const opId = op.operationId || 'op';
-  return `${opId}_Error${code}`;
-}
-
-function extractStructs(spec: any, baseDir: string): Record<string, any[]> {
-  const structs: Record<string, any[]> = {};
-  const definitions = spec.definitions || {}; // OpenAPI v2 uses 'definitions' instead of 'components.schemas'
-  
-  // Helper to recursively collect all referenced schemas
-  function collectAllReferencedSchemas(schema: any, name: string) {
-    if (!schema || typeof schema !== 'object' || !name || structs[name]) return;
-    const resolved = schema.$ref ? resolveRef(schema.$ref, spec, baseDir) : schema;
-    const fields = parseSchema(name, resolved, spec, baseDir);
-    
-    // Only add struct if it has at least one field
-    if (fields.length > 0) {
-      structs[name] = fields;
-    }
-
-    // Traverse all properties
-    if (resolved && resolved.type === 'object' && resolved.properties && typeof resolved.properties === 'object') {
-      for (const [propName, prop] of Object.entries<any>(resolved.properties)) {
-        if (prop && typeof prop === 'object' && prop.$ref) {
-          const refName = prop.$ref.split('/').pop();
-          if (refName) collectAllReferencedSchemas(resolveRef(prop.$ref, spec, baseDir), refName);
-        } else if (prop && typeof prop === 'object' && prop.type === 'array' && prop.items) {
-          if (prop.items && typeof prop.items === 'object' && prop.items.$ref) {
-            const refName = prop.items.$ref.split('/').pop();
-            if (refName) collectAllReferencedSchemas(resolveRef(prop.items.$ref, spec, baseDir), refName);
-          } else if (prop.items && typeof prop.items === 'object' && (prop.items.type === 'object' || prop.items.properties || prop.items.allOf || prop.items.oneOf || prop.items.anyOf)) {
-            collectAllReferencedSchemas(prop.items, name + '_' + propName + '_Item');
-          }
-        } else if (prop && typeof prop === 'object' && (prop.type === 'object' || prop.properties || prop.allOf || prop.oneOf || prop.anyOf)) {
-          collectAllReferencedSchemas(prop, name + '_' + propName);
-        }
-      }
-    }
-    // Traverse array items at root
-    if (resolved && resolved.type === 'array' && resolved.items) {
-      if (resolved.items && typeof resolved.items === 'object' && resolved.items.$ref) {
-        const refName = resolved.items.$ref.split('/').pop();
-        if (refName) collectAllReferencedSchemas(resolveRef(resolved.items.$ref, spec, baseDir), refName);
-      } else if (resolved.items && typeof resolved.items === 'object' && (resolved.items.type === 'object' || resolved.items.properties || resolved.items.allOf || resolved.items.oneOf || resolved.items.anyOf)) {
-        collectAllReferencedSchemas(resolved.items, name + '_Item');
-      }
-    }
-    // Traverse allOf/oneOf/anyOf
-    for (const combiner of ['allOf', 'oneOf', 'anyOf']) {
-      if (resolved && Array.isArray(resolved[combiner])) {
-        for (const subSchema of resolved[combiner]) {
-          if (subSchema && typeof subSchema === 'object' && subSchema.$ref) {
-            const refName = subSchema.$ref.split('/').pop();
-            if (refName) collectAllReferencedSchemas(resolveRef(subSchema.$ref, spec, baseDir), refName);
-          } else if (subSchema && typeof subSchema === 'object') {
-            collectAllReferencedSchemas(subSchema, name + '_' + combiner);
-          }
-        }
-      }
-    }
-  }
-  
-  // Extract schemas from definitions (OpenAPI v2)
-  for (const name in definitions) {
-    collectAllReferencedSchemas(definitions[name], name);
-    const schema = definitions[name];
-    if (schema && (schema.oneOf || schema.anyOf)) {
-      // Build union struct with actual variant types
-      const unionFields = parseSchema(`${name}_Union`, schema, spec, baseDir);
-      structs[`${name}_Union`] = unionFields.length > 0 ? unionFields : [{ name: 'value', type: 'ANY', REQUIRED: false }];
-    }
-  }
-
-  // Register shared response schemas from spec.responses under the same name
-  // extractErrors uses for them, so `STRUCT(ErrorNNN)` references resolve.
-  const topLevelResponses = spec.responses || {};
-  for (const [key, rawResp] of Object.entries<any>(topLevelResponses)) {
-    if (!rawResp || !rawResp.schema) continue;
-    const structName = /^[0-9]+$/.test(key) ? `Error${key}` : `Response_${key}`;
-    if (rawResp.schema.$ref) {
-      const refName = rawResp.schema.$ref.split('/').pop();
-      if (refName) collectAllReferencedSchemas(resolveRef(rawResp.schema.$ref, spec, baseDir), refName);
-    } else if (typeof rawResp.schema === 'object') {
-      collectAllReferencedSchemas(rawResp.schema, structName);
-    }
-  }
-  
-  // Extract inline schemas from operations
-  if (spec.paths && typeof spec.paths === 'object') {
-    for (const [pathStr, pathMethods] of Object.entries<any>(spec.paths)) {
-      for (const [method, op] of Object.entries<any>(pathMethods)) {
-        const operationId = op.operationId || `${method}-${pathStr.replace(/[\/{}]/g, '-')}`;
-        
-        // Extract request body schemas (OpenAPI v2 uses parameters with in: body)
-        if (op.parameters) {
-          for (const param of op.parameters) {
-            if (param && typeof param === 'object' && param.in === 'body' && param.schema) {
-              if (param.schema && param.schema.$ref) {
-                const refName = param.schema.$ref.split('/').pop();
-                if (refName) collectAllReferencedSchemas(resolveRef(param.schema.$ref, spec, baseDir), refName);
-              } else if (param.schema && typeof param.schema === 'object') {
-                const requestStructName = generateStructName(operationId, method, pathStr, 'Request');
-                collectAllReferencedSchemas(param.schema, requestStructName);
-              }
-            }
-          }
-        }
-        
-        // Extract response schemas (OpenAPI v2 has schema directly in response)
-        if (op.responses) {
-          for (const [code, response] of Object.entries<any>(op.responses)) {
-            // Handle response references
-            let actualResponse = response;
-            if (response && typeof response === 'object' && response.$ref) {
-              actualResponse = resolveRef(response.$ref, spec, baseDir);
-            }
-            
-            if (actualResponse && typeof actualResponse === 'object' && actualResponse.schema) {
-              if (actualResponse.schema && actualResponse.schema.$ref) {
-                const refName = actualResponse.schema.$ref.split('/').pop();
-                if (refName) collectAllReferencedSchemas(resolveRef(actualResponse.schema.$ref, spec, baseDir), refName);
-              } else if (actualResponse.schema && typeof actualResponse.schema === 'object') {
-                // For error codes, use the same name extractErrors will emit
-                // so the STRUCT(...) reference resolves.
-                const statusCode = parseInt(code);
-                const responseStructName = statusCode >= 400
-                  ? getErrorStructName(response, op, code)
-                  : generateStructName(operationId, method, pathStr, `Response${code}`);
-                collectAllReferencedSchemas(actualResponse.schema, responseStructName);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  return structs;
-}
 
 function getContentTypeAndBodyType(op: any, spec: any): { contentType: string; bodyType: string } {
   // Check if there are formData parameters
@@ -492,7 +80,7 @@ function getAcceptContentType(op: any, spec: any): string {
   return CONTENT_TYPE_JSON;
 }
 
-function getHeadersForOperation(op: any, spec: any, method?: string, baseDir?: string): Record<string, string> {
+function getHeadersForOperation(op: any, spec: any, method?: string, resolver?: RefResolver): Record<string, string> {
   const { contentType } = getContentTypeAndBodyType(op, spec);
   
   // Use a Map to prevent duplicate headers
@@ -529,7 +117,7 @@ function getHeadersForOperation(op: any, spec: any, method?: string, baseDir?: s
     for (let param of op.parameters) {
       // Resolve $ref if present
       if (param && typeof param === 'object' && param.$ref) {
-        param = resolveRef(param.$ref, spec, baseDir || '');
+        param = resolver ? resolver.resolveRef(param.$ref) : param;
       }
       if (param && typeof param === 'object' && param.in === 'header' && param.name === HEADER_AUTHORIZATION && !headerMap.has(HEADER_AUTHORIZATION)) {
         headerMap.set(HEADER_AUTHORIZATION, AUTH_BEARER_TOKEN);
@@ -546,7 +134,7 @@ function getHeadersForOperation(op: any, spec: any, method?: string, baseDir?: s
   return headers;
 }
 
-function extractParameters(op: any, spec: any, baseDir: string): any[] {
+function extractParameters(op: any, _spec: any, resolver: RefResolver): any[] {
   const inputParams: any[] = [];
   
   // Handle query parameters only
@@ -557,7 +145,7 @@ function extractParameters(op: any, spec: any, baseDir: string): any[] {
     for (let param of op.parameters) {
       // Resolve parameter references
       if (param && typeof param === 'object' && param.$ref) {
-        param = resolveRef(param.$ref, spec, baseDir);
+        param = resolver.resolveRef(param.$ref);
       }
       
       // Skip body and formData parameters, they are handled in extractRequestBody
@@ -579,9 +167,9 @@ function extractParameters(op: any, spec: any, baseDir: string): any[] {
       
       let type = 'STRING';
       if (param && typeof param === 'object' && param.type) {
-        type = getTypeFromSchema({ type: param.type, format: param.format }, spec, baseDir);
+        type = getTypeFromSchema({ type: param.type, format: param.format }, resolver);
       } else if (paramSchema && typeof paramSchema === 'object' && paramSchema.type) {
-        type = getTypeFromSchema(paramSchema, spec, baseDir);
+        type = getTypeFromSchema(paramSchema, resolver);
       }
       
       // v2.0.2: All INPUTS must have LOCATION field
@@ -613,7 +201,7 @@ function extractParameters(op: any, spec: any, baseDir: string): any[] {
   return inputParams;
 }
 
-function extractRequestBody(op: any, operationId: string, method: string, path: string, spec: any, baseDir: string): any[] {
+function extractRequestBody(op: any, operationId: string, method: string, path: string, _spec: any, resolver: RefResolver): any[] {
   const inputParams: any[] = [];
   
   // OpenAPI v2 uses parameters with in: body
@@ -622,7 +210,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
   if (bodyParam) {
     let type: string;
     if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema?.$ref) {
-      type = getTypeFromSchema(bodyParam.schema, spec, baseDir);
+      type = getTypeFromSchema(bodyParam.schema, resolver);
     } else if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema) {
       // Inline schema - use generated struct name
       const requestStructName = generateStructName(operationId, method, path, 'Request');
@@ -659,7 +247,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
   if (op.parameters) {
     for (const param of op.parameters) {
       if (param && typeof param === 'object' && param.in === 'formData') {
-        const type = param.type === 'file' ? 'STRING' : getTypeFromSchema({ type: param.type, format: param.format, items: param.items }, spec, baseDir);
+        const type = param.type === 'file' ? 'STRING' : getTypeFromSchema({ type: param.type, format: param.format, items: param.items }, resolver);
         // FormData parameters default to false (optional) if not specified
         const isRequired = param.required === true;
         const hasDefault = param.default !== undefined;
@@ -691,7 +279,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
   return inputParams;
 }
 
-function extractResponses(op: any, operationId: string, method: string, path: string, spec: any, baseDir: string): any[] {
+function extractResponses(op: any, operationId: string, method: string, path: string, _spec: any, resolver: RefResolver): any[] {
   const returns: any[] = [];
 
   // Only include success responses (2xx) in RETURNS section
@@ -707,7 +295,7 @@ function extractResponses(op: any, operationId: string, method: string, path: st
     // Handle response references (OpenAPI v2)
     let actualResponse = response;
     if (response && typeof response === 'object' && response.$ref) {
-      actualResponse = resolveRef(response.$ref, spec, baseDir);
+      actualResponse = resolver.resolveRef(response.$ref);
     }
     
     let returnType: string | null = null;
@@ -720,19 +308,19 @@ function extractResponses(op: any, operationId: string, method: string, path: st
     if (actualResponse && typeof actualResponse === 'object' && actualResponse.schema) {
       const schema = actualResponse.schema;
       if (schema.$ref) {
-        returnType = getTypeFromSchema(schema, spec, baseDir);
+        returnType = getTypeFromSchema(schema, resolver);
       } else if (schema.type === 'array') {
         if (schema.items?.$ref) {
-          returnType = getTypeFromSchema(schema, spec, baseDir);
+          returnType = getTypeFromSchema(schema, resolver);
         } else {
-          returnType = getTypeFromSchema(schema, spec, baseDir);
+          returnType = getTypeFromSchema(schema, resolver);
         }
       } else if (schema.type === 'object') {
         // Inline schema - use generated struct name
         const responseStructName = generateStructName(operationId, method, path, `Response${code}`);
         returnType = `STRUCT(${responseStructName})`;
       } else {
-        returnType = getTypeFromSchema(schema, spec, baseDir);
+        returnType = getTypeFromSchema(schema, resolver);
       }
     } else {
       // No schema - might be a header-only response
@@ -758,7 +346,7 @@ function extractResponses(op: any, operationId: string, method: string, path: st
       // Check for pagination hints in response schema
       if (actualResponse && typeof actualResponse === 'object' && actualResponse.schema) {
         const schema = actualResponse.schema;
-        const resolvedSchema = schema.$ref ? resolveRef(schema.$ref, spec, baseDir) : schema;
+        const resolvedSchema = schema.$ref ? resolver.resolveRef(schema.$ref) : schema;
         if (resolvedSchema && resolvedSchema.properties) {
           // Look for common pagination fields
           if (resolvedSchema.properties.next_cursor || resolvedSchema.properties.cursor) {
@@ -789,7 +377,7 @@ function extractResponses(op: any, operationId: string, method: string, path: st
   return returns;
 }
 
-function extractErrors(op: any, spec: any, baseDir: string): any[] {
+function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
   const errors: any[] = [];
 
   // Extract error responses (4xx, 5xx)
@@ -801,7 +389,7 @@ function extractErrors(op: any, spec: any, baseDir: string): any[] {
       // Handle response references
       let actualResponse = response;
       if (response && typeof response === 'object' && response.$ref) {
-        actualResponse = resolveRef(response.$ref, spec, baseDir);
+        actualResponse = resolver.resolveRef(response.$ref);
       }
       
       let errorType = TYPE_ANY;
@@ -810,11 +398,11 @@ function extractErrors(op: any, spec: any, baseDir: string): any[] {
       if (actualResponse && typeof actualResponse === 'object' && actualResponse.schema) {
         const schema = actualResponse.schema;
         if (schema.$ref) {
-          errorType = getTypeFromSchema(schema, spec, baseDir);
+          errorType = getTypeFromSchema(schema, resolver);
         } else if (schema.type && schema.type !== 'object') {
           // Primitive / array error schema — emit the primitive type directly
           // instead of wrapping in a dangling STRUCT(...).
-          errorType = getTypeFromSchema(schema, spec, baseDir);
+          errorType = getTypeFromSchema(schema, resolver);
         } else {
           // Inline object error schema — generate a struct name. Shared
           // Swagger v2 responses (spec.responses.X) get a stable name so the
@@ -851,7 +439,7 @@ function generateMethodAlias(operationId: string, method: string, path: string):
   return `${method.toLowerCase()}-${pathParts}`;
 }
 
-function extractMethods(spec: any, baseDir: string): Record<string, any> {
+function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
   const methods: Record<string, any> = {};
   
   // Valid HTTP methods
@@ -883,12 +471,12 @@ function extractMethods(spec: any, baseDir: string): Record<string, any> {
       const opWithMergedParams = { ...op, parameters: allParams };
       
       const { contentType, bodyType } = getContentTypeAndBodyType(opWithMergedParams, spec);
-      const headers = getHeadersForOperation(opWithMergedParams, spec, method, baseDir);
-      const pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, baseDir);
-      const bodyParams = extractRequestBody(opWithMergedParams, operationId, method, pathStr, spec, baseDir);
+      const headers = getHeadersForOperation(opWithMergedParams, spec, method, resolver);
+      const pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, resolver);
+      const bodyParams = extractRequestBody(opWithMergedParams, operationId, method, pathStr, spec, resolver);
       const inputParams = [...pathQueryHeaderParams, ...bodyParams];
-      const returns = extractResponses(opWithMergedParams, operationId, method, pathStr, spec, baseDir);
-      const errors = extractErrors(opWithMergedParams, spec, baseDir);
+      const returns = extractResponses(opWithMergedParams, operationId, method, pathStr, spec, resolver);
+      const errors = extractErrors(opWithMergedParams, spec, resolver);
 
       // Get accept content type from responses
       const acceptContentType = getAcceptContentType(opWithMergedParams, spec);
@@ -1091,8 +679,13 @@ function preprocessFormDataParameters(spec: any) {
   }
 }
 
-function generateWrekenfile(spec: any, baseDir: string): string {
+function generateWrekenfile(specStr: string | any, baseDir: string): string {
+  let spec: any = {};
   try {
+    const parsed = typeof specStr === 'string' ? (specStr.trim().startsWith('{') ? JSON.parse(specStr) : load(specStr)) : specStr;
+    spec = JSON.parse(JSON.stringify(parsed));
+    const resolver = new RefResolver(baseDir, spec);
+
     // Validate inputs
     validateOpenApiV2Spec(spec);
     validateBaseDir(baseDir);
@@ -1101,8 +694,8 @@ function generateWrekenfile(spec: any, baseDir: string): string {
     preprocessFormDataParameters(spec);
 
     const defaults = extractSecurityDefaults(spec);
-    const methods = extractMethods(spec, baseDir);
-    const structs = extractStructs(spec, baseDir);
+    const methods = extractMethods(spec, resolver);
+    const structs = extractStructs(spec, resolver);
 
     // Resolve canonical IDs for all methods
     const canonicalInputs: MethodCanonicalInput[] = Object.entries(methods).map(
@@ -1184,74 +777,15 @@ function generateWrekenfile(spec: any, baseDir: string): string {
  */
 function generateWrekenfileWithStats(spec: any, baseDir: string): { yaml: string; stats: ConversionStats } {
   try {
-    validateOpenApiV2Spec(spec);
-    validateBaseDir(baseDir);
-
-    // Preprocess formData parameters into structural bodies for JSON-supporting endpoints
-    preprocessFormDataParameters(spec);
-
-    const defaults = extractSecurityDefaults(spec);
-    const methods = extractMethods(spec, baseDir);
-    const structs = extractStructs(spec, baseDir);
-
-    const canonicalInputs: MethodCanonicalInput[] = Object.entries(methods).map(
-      ([methodId, methodData]) => ({
-        methodId,
-        httpMethod: methodData.HTTP?.METHOD,
-        endpoint: methodData.HTTP?.ENDPOINT,
-        existingCanonicalId: methodData.CANONICAL_ID,
-      })
-    );
-    const libraryName = spec?.info?.['x-swytchcode-namespace'] || spec?.info?.title || 'unknown';
-    const canonicalIdMap = resolveCanonicalIds(canonicalInputs, libraryName);
-    for (const [methodId, methodData] of Object.entries(methods)) {
-      const canonicalId = canonicalIdMap.get(methodId);
-      if (canonicalId) {
-        methodData.CANONICAL_ID = canonicalId;
-      }
-    }
-    updateReturnVarsUsingCanonicalId(methods);
-
-    const wrekenfile: any = { VERSION: WREKENFILE_VERSION };
-    if (Object.keys(defaults).length > 0) {
-      wrekenfile.DEFAULTS = defaults;
-    }
-    const renamedMethods = renameMethodsToCanonicalId(methods);
-    wrekenfile.METHODS = renamedMethods;
-
-    const preFilterStructCount = Object.keys(structs).length;
-    if (preFilterStructCount > 0) {
-      wrekenfile.STRUCTS = structs;
-    }
-    filterStructsByUsage(wrekenfile);
-
-    const stats = computeConversionStats(wrekenfile, preFilterStructCount);
-    const yaml = generateYamlString(wrekenfile);
-
+    const yaml = generateWrekenfile(spec, baseDir);
+    const wrekenfile = load(yaml);
+    const stats = computeConversionStats(wrekenfile);
     return { yaml, stats };
   } catch (err: any) {
-    logError(err, {
-      converter: 'openapi-v2-to-wrekenfile',
-      baseDir,
-      specInfo: spec?.info?.title || 'unknown',
-      specVersion: spec?.swagger || 'unknown'
-    });
-
     if (err.code && (err.code.startsWith('INVALID_') || err.code.startsWith('MISSING_'))) {
       throw err;
     }
-
-    throw createConverterError(
-      `Failed to generate Wrekenfile from OpenAPI v2 spec: ${err.message}`,
-      "GENERATION_FAILED",
-      {
-        converter: 'openapi-v2-to-wrekenfile',
-        baseDir,
-        specInfo: spec?.info?.title || 'unknown',
-        specVersion: spec?.swagger || 'unknown'
-      },
-      err
-    );
+    throw err;
   }
 }
 

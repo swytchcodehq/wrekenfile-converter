@@ -341,10 +341,7 @@ export function resolveCanonicalIds(
   let finalCandidate = p.baseId;
   let attempts = 1;
   while (!tryAssign(p.methodId, finalCandidate) && attempts < 100) {
-    finalCandidate =
-      baseParts.length >= 4
-        ? [...baseParts.slice(0, -1), `${baseParts[baseParts.length - 1]}${attempts}`].join('.')
-        : `${p.baseId}.${attempts}`;
+    finalCandidate = [...baseParts.slice(0, -1), `${baseParts[baseParts.length - 1]}${attempts}`].join('.');
     attempts++;
   }
   result.set(p.methodId, finalCandidate);
