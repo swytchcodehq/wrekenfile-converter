@@ -11,6 +11,7 @@ import {
   FILENAME_TRAILING_SLASHES,
 } from './utils/constants';
 import { generateYamlString } from './utils/yaml-utils';
+import { extractAllStructNames } from './utils/struct-utils';
 
 export interface MiniWrekenfile {
   content: string;
@@ -174,28 +175,31 @@ function createMiniWrekenfile(
     }).filter(Boolean);
   }
 
-  // RETURNS section - single object with TYPE and DESC
+  // RETURNS section - can be an array to support multi-status
   if (methodData.RETURNS && methodData.RETURNS.length > 0) {
-    // Use the first return type
-    const firstReturn = methodData.RETURNS[0];
-    miniData.RETURNS = {
-      TYPE: firstReturn.RETURNTYPE || 'ANY',
-    };
-    if (firstReturn.DESC) {
-      miniData.RETURNS.DESC = firstReturn.DESC;
-    }
+    miniData.RETURNS = methodData.RETURNS.map((ret: any) => {
+      const r: any = { TYPE: ret.RETURNTYPE || 'ANY' };
+      if (ret.STATUS) r.STATUS = ret.STATUS;
+      if (ret.RETURNVAR) r.RETURNVAR = ret.RETURNVAR;
+      if (ret.DESC) r.DESC = ret.DESC;
+      if (ret.PAGINATION) r.PAGINATION = ret.PAGINATION;
+      return r;
+    });
   } else if (methodData.ASYNC?.RESULT?.TYPE) {
-    miniData.RETURNS = {
+    miniData.RETURNS = [{
       TYPE: methodData.ASYNC.RESULT.TYPE,
-    };
+    }];
   }
 
-  // ERRORS section (optional)
   if (methodData.ERRORS && methodData.ERRORS.length > 0) {
-    miniData.ERRORS = methodData.ERRORS.map((error: any) => ({
-      TYPE: error.TYPE || 'ANY',
-      WHEN: error.WHEN || '',
-    }));
+    miniData.ERRORS = methodData.ERRORS.map((error: any) => {
+      const errObj: any = {
+        TYPE: error.TYPE || 'ANY',
+        WHEN: error.WHEN || '',
+      };
+      if (error.STATUS !== undefined) errObj.STATUS = error.STATUS;
+      return errObj;
+    });
   }
 
   // STRUCTS section - collect and include required structs
@@ -335,8 +339,8 @@ function collectStructRecursively(
   if (Array.isArray(structData)) {
     // Old format: array of fields
     for (const field of structData) {
-      if (field.type) {
-        const nestedStructNames = extractAllStructNames(field.type);
+      if (field.TYPE) {
+        const nestedStructNames = extractAllStructNames(field.TYPE);
         for (const nestedStructName of nestedStructNames) {
           if (nestedStructName) {
             collectStructRecursively(nestedStructName, allStructs, requiredStructs, processedStructs);
@@ -359,20 +363,6 @@ function collectStructRecursively(
   }
 }
 
-const STRUCT_REGEX = /^STRUCT\(([^)]+)\)/;
-const ARRAY_STRUCT_REGEX = /^\[\]STRUCT\(([^)]+)\)/;
-const MAP_STRUCT_REGEX = /map\[[^\]]+\]STRUCT\(([^)]+)\)/;
-
-function extractAllStructNames(typeString: string): string[] {
-  const matches: string[] = [];
-  const match1 = typeString.match(STRUCT_REGEX);
-  const match2 = typeString.match(ARRAY_STRUCT_REGEX);
-  const match3 = typeString.match(MAP_STRUCT_REGEX);
-  if (match1) matches.push(match1[1]);
-  if (match2) matches.push(match2[1]);
-  if (match3) matches.push(match3[1]);
-  return matches;
-}
 
 function sanitizeFilename(name: string): string {
   return name

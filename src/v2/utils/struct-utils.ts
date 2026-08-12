@@ -9,7 +9,7 @@
  * - "[]STRUCT(model.User)" -> ["model.User"]
  * - "map[string]STRUCT(api.Request)" -> ["api.Request"]
  */
-function extractAllStructNames(typeString: string): string[] {
+export function extractAllStructNames(typeString: string): string[] {
   const names: string[] = [];
   const structPattern = /STRUCT\(([^)]+)\)/g;
   let match: RegExpExecArray | null;
@@ -52,7 +52,7 @@ export function filterStructsByUsage(wrekenfile: any): void {
           if (typeof value === 'string') {
             addFromType(value);
           } else if (value && typeof value === 'object') {
-            addFromType(value.TYPE || value.type);
+            addFromType(value.TYPE);
           }
         }
       }
@@ -86,7 +86,7 @@ export function filterStructsByUsage(wrekenfile: any): void {
     for (const [name, fields] of Object.entries<any[]>(structs)) {
       if (!used.has(name)) continue;
       for (const field of fields || []) {
-        const t = (field && (field.TYPE || field.type)) as string | undefined;
+        const t = (field && field.TYPE) as string | undefined;
         if (!t) continue;
         for (const nested of extractAllStructNames(t)) {
           if (nested && !used.has(nested)) {
