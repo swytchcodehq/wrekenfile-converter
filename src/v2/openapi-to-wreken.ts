@@ -35,11 +35,12 @@ import { filterStructsByUsage } from './utils/struct-utils';
 import { computeConversionStats, type ConversionStats } from './utils/conversion-stats';
 
 import { RefResolver } from './utils/ref-utils';
-import { 
-  extractStructs, 
-  getTypeFromSchema, 
-  generateStructName, 
-  getErrorStructName 
+import {
+  extractStructs,
+  getTypeFromSchema,
+  generateStructName,
+  getErrorStructName,
+  isStructSchema,
 } from './utils/schema-utils';
 
 
@@ -214,16 +215,25 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
   if (!requestBody?.content) {
     return inputParams;
   }
-  const contentTypes = Object.keys(requestBody.content);
-  const contentType = contentTypes[0];
+  // Pick by priority (JSON, then multipart, then urlencoded) rather than
+  // declaration order — a spec listing e.g. "application/xml" before
+  // "application/json" in `content` must not cause the JSON body to be
+  // silently skipped.
+  const contentType = [CONTENT_TYPE_JSON, 'multipart/form-data', 'application/x-www-form-urlencoded']
+    .find((ct) => requestBody.content[ct]?.schema);
   if (contentType === CONTENT_TYPE_JSON && requestBody.content[contentType]?.schema) {
     const bodySchema = requestBody.content[contentType].schema;
     let type: string;
     if (bodySchema && bodySchema.$ref) {
       type = getTypeFromSchema(bodySchema, resolver);
-    } else if (bodySchema) {
+    } else if (bodySchema && isStructSchema(bodySchema)) {
       const requestStructName = generateStructName(operationId, method, path, 'Request');
       type = `STRUCT(${requestStructName})`;
+    } else if (bodySchema) {
+      // Non-object inline schema (array, primitive, map) - no matching
+      // STRUCTS entry will ever be registered for it, so don't wrap it in
+      // a dangling STRUCT(...) reference.
+      type = getTypeFromSchema(bodySchema, resolver);
     } else {
       type = 'ANY';
     }
@@ -344,8 +354,10 @@ function extractResponses(op: any, operationId: string, method: string, path: st
         // Use getTypeFromSchema to handle arrays, $refs, and inline schemas correctly
           returnType = getTypeFromSchema(schema, resolver);
         
-        // If it's an inline object schema (not array, not $ref), we need to create a struct
-        if (returnType === 'OBJECT' && !schema.$ref && schema.type === 'object') {
+        // If it's an inline object schema (not array, not $ref), we need to create a struct.
+        // getTypeFromSchema only returns 'OBJECT' when isStructSchema(schema) is true, which
+        // also covers object schemas without an explicit "type": "object" (common in the wild).
+        if (returnType === 'OBJECT' && !schema.$ref) {
           const responseStructName = generateStructName(operationId, method, path, `Response${code}`);
           returnType = `STRUCT(${responseStructName})`;
         }
@@ -461,16 +473,6 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
   return errors;
 }
 
-function generateMethodAlias(operationId: string, method: string, path: string): string {
-  if (operationId) {
-    // Convert operationId to kebab-case if needed
-    return operationId.replace(/_/g, '-').toLowerCase();
-  }
-  // Generate from path and method
-  const pathParts = path.replace(/[\/{}]/g, '-').replace(/^-|-$/g, '');
-  return `${method.toLowerCase()}-${pathParts}`;
-}
-
 function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
   const methods: Record<string, any> = {};
   
@@ -492,7 +494,12 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       }
       
       const operationId = op.operationId || `${method}-${pathStr.replace(/[\/{}]/g, '-')}`;
-      const alias = generateMethodAlias(operationId, method, pathStr);
+      // Real-world specs sometimes reuse the same operationId across many
+      // endpoints, even though OpenAPI requires operationId to be unique.
+      // Key the intermediate map by method+path (always unique) so those
+      // operations don't silently overwrite each other before CANONICAL_ID
+      // renaming runs.
+      const alias = `${method.toUpperCase()} ${pathStr}`;
       
       const summary = generateSummary(op, method, pathStr);
       const endpoint = pathStr;

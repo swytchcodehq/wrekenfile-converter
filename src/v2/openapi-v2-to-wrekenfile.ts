@@ -28,11 +28,12 @@ import { filterStructsByUsage } from './utils/struct-utils';
 import { computeConversionStats, type ConversionStats } from './utils/conversion-stats';
 
 import { RefResolver } from './utils/ref-utils';
-import { 
-  extractStructs, 
-  getTypeFromSchema, 
-  generateStructName, 
-  getErrorStructName 
+import {
+  extractStructs,
+  getTypeFromSchema,
+  generateStructName,
+  getErrorStructName,
+  isStructSchema,
 } from './utils/schema-utils';
 
 
@@ -211,10 +212,15 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     let type: string;
     if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema?.$ref) {
       type = getTypeFromSchema(bodyParam.schema, resolver);
-    } else if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema) {
-      // Inline schema - use generated struct name
+    } else if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema && isStructSchema(bodyParam.schema)) {
+      // Inline object schema - use generated struct name
       const requestStructName = generateStructName(operationId, method, path, 'Request');
       type = `STRUCT(${requestStructName})`;
+    } else if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema) {
+      // Non-object inline schema (array, primitive, map) - no matching
+      // STRUCTS entry will ever be registered for it, so don't wrap it in
+      // a dangling STRUCT(...) reference.
+      type = getTypeFromSchema(bodyParam.schema, resolver);
     } else {
       type = 'ANY';
     }
@@ -315,8 +321,10 @@ function extractResponses(op: any, operationId: string, method: string, path: st
         } else {
           returnType = getTypeFromSchema(schema, resolver);
         }
-      } else if (schema.type === 'object') {
-        // Inline schema - use generated struct name
+      } else if (isStructSchema(schema)) {
+        // Inline schema (object properties, possibly without an explicit
+        // "type": "object" — common in real-world Swagger specs) - use
+        // generated struct name so extractStructs' matching entry is kept.
         const responseStructName = generateStructName(operationId, method, path, `Response${code}`);
         returnType = `STRUCT(${responseStructName})`;
       } else {
@@ -429,16 +437,6 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
   return errors;
 }
 
-function generateMethodAlias(operationId: string, method: string, path: string): string {
-  if (operationId) {
-    // Convert operationId to kebab-case if needed
-    return operationId.replace(/_/g, '-').toLowerCase();
-  }
-  // Generate from path and method
-  const pathParts = path.replace(/[\/{}]/g, '-').replace(/^-|-$/g, '');
-  return `${method.toLowerCase()}-${pathParts}`;
-}
-
 function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
   const methods: Record<string, any> = {};
   
@@ -461,7 +459,14 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       }
       
       const operationId = op.operationId || `${method}-${pathStr.replace(/[\/{}]/g, '-')}`;
-      const alias = generateMethodAlias(operationId, method, pathStr);
+      // Real-world specs sometimes reuse the same operationId across many
+      // endpoints (e.g. generic "CreateIndividual" CRUD ids repeated per
+      // resource), even though OpenAPI requires operationId to be unique.
+      // Key the intermediate map by method+path (always unique) so those
+      // operations don't silently overwrite each other before CANONICAL_ID
+      // renaming runs; generateMethodAlias's operationId-derived value is
+      // only used as a display alias input, never as the map key.
+      const alias = `${method.toUpperCase()} ${pathStr}`;
       
       const summary = generateSummary(op, method, pathStr);
       const endpoint = pathStr;
