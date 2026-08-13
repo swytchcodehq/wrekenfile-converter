@@ -97,3 +97,37 @@ export class RefResolver {
     }
   }
 }
+
+/**
+ * Deterministically sanitizes a raw identity string for use as a Wrekenfile struct name.
+ * If non-alphanumeric characters are stripped, a deterministic hash is appended to prevent
+ * data loss and subsequent collisions (e.g. Foo-Bar vs Foo.Bar).
+ */
+export function sanitizeName(raw: string): string {
+  if (!raw) return '';
+  const sanitized = raw.replace(/[^a-zA-Z0-9_]/g, '_');
+  if (sanitized === raw) return sanitized;
+  
+  // Use a simple deterministic hash (djb2) to ensure uniqueness
+  let hash = 5381;
+  for (let i = 0; i < raw.length; i++) {
+    hash = ((hash << 5) + hash) + raw.charCodeAt(i); /* hash * 33 + c */
+  }
+  // Convert to positive hex string
+  const suffix = (hash >>> 0).toString(16);
+  return `${sanitized}_${suffix}`;
+}
+
+/**
+ * Decodes JSON Pointer tokens (~1, ~0) and URI components from a $ref before 
+ * returning the sanitized struct name.
+ */
+export function extractRefName(ref: string): string | undefined {
+  if (!ref || typeof ref !== 'string') return undefined;
+  const rawTail = ref.split('/').pop();
+  if (!rawTail) return undefined;
+  
+  // Apply JSON Pointer decoding
+  const decoded = decodeURIComponent(rawTail.replace(/~1/g, '/').replace(/~0/g, '~'));
+  return sanitizeName(decoded);
+}

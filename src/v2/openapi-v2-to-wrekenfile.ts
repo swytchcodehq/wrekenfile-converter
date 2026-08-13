@@ -566,9 +566,12 @@ function extractSecurityDefaults(spec: any): Record<string, string> {
   
   // Add base URL (OpenAPI v2 constructs from schemes, host, basePath)
   const scheme = spec.schemes?.[0] || 'https';
-  const host = spec.host || '';
+  let host = spec.host || '';
+  if (!host) {
+    host = '<BASE_URL>';
+  }
   const basePath = spec.basePath || '';
-  const baseUrl = `${scheme}://${host}${basePath}`;
+  const baseUrl = host === '<BASE_URL>' ? host : `${scheme}://${host}${basePath}`;
   defs.w_base_url = baseUrl.replace(/\/$/, ''); // Remove trailing slash
   
   return defs;
