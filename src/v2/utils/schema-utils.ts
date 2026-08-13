@@ -30,7 +30,7 @@ export function mapSchemaToMapType(ap: any, resolver: RefResolver): string {
     if (resolved && resolved.type && resolved.type !== 'object') {
       return `map[STRING]${mapType(resolved.type, resolved.format)}`;
     }
-    return `map[STRING]STRUCT(${ap.$ref.split('/').pop()})`;
+    return `map[STRING]STRUCT(${ap.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_')})`;
   }
   if (ap.type === 'array' && ap.items) {
     if (ap.items.$ref) {
@@ -38,7 +38,7 @@ export function mapSchemaToMapType(ap: any, resolver: RefResolver): string {
       if (resolvedItems && resolvedItems.type && resolvedItems.type !== 'object') {
         return `map[STRING][]${mapType(resolvedItems.type, resolvedItems.format)}`;
       }
-      return `map[STRING][]STRUCT(${ap.items.$ref.split('/').pop()})`;
+      return `map[STRING][]STRUCT(${ap.items.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_')})`;
     }
     if (ap.items.type) {
       return `map[STRING][]${mapType(ap.items.type, ap.items.format)}`;
@@ -85,7 +85,7 @@ export function getTypeFromSchema(schema: any, resolver: RefResolver): string {
       }
       return 'ANY';
     }
-    const refName = schema.$ref.split('/').pop();
+    const refName = schema.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_');
     return `STRUCT(${refName})`;
   }
   if (schema.type === 'array') {
@@ -94,7 +94,7 @@ export function getTypeFromSchema(schema: any, resolver: RefResolver): string {
       if (resolvedItems && resolvedItems.type && resolvedItems.type !== 'object') {
         return `[]${mapType(resolvedItems.type, resolvedItems.format)}`;
       }
-      const refName = schema.items.$ref.split('/').pop();
+      const refName = schema.items.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_');
       return `[]STRUCT(${refName})`;
     } else if (schema.items) {
       const itemsAllOfRef = getSingleAllOfRef(schema.items);
@@ -147,7 +147,7 @@ export function parseSchema(name: string, schema: any, resolver: RefResolver, de
     for (let i = 0; i < variants.length; i++) {
       const variant = variants[i];
       if (variant && typeof variant === 'object' && variant.$ref) {
-        const refName = typeof variant.$ref === 'string' ? variant.$ref.split('/').pop() : undefined;
+        const refName = typeof variant.$ref === 'string' ? variant.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_') : undefined;
         const variantType = getTypeFromSchema(variant, resolver) || 'ANY';
         fields.push({
           name: refName ? `variant_${refName}` : `variant_${i}`,
@@ -231,13 +231,13 @@ export function generateStructName(operationId: string, method: string, path: st
   // Sanitize the same way as operationId below: path segments commonly
   // contain hyphens, colons, etc. (e.g. "/chart-data.json") that aren't
   // valid identifier characters and would otherwise leak into the name.
-  const pathParts = path.replace(/[^a-zA-Z0-9_.]/g, '_').replace(/^_+|_+$/g, '');
+  const pathParts = path.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_+|_+$/g, '');
   const pathId = `${method.toLowerCase()}_${pathParts}`;
   if (operationId) {
     // Sanitize: some specs use non-identifier characters in operationId
     // (e.g. "recent/newvaluefeeds"), which would otherwise leak into the
     // generated STRUCT name.
-    const safeId = operationId.replace(/[^a-zA-Z0-9_.]/g, '_');
+    const safeId = operationId.replace(/[^a-zA-Z0-9_]/g, '_');
     return `${safeId}_${pathId}${suffix}`;
   }
   return `${pathId}${suffix}`;
@@ -245,7 +245,7 @@ export function generateStructName(operationId: string, method: string, path: st
 
 export function getErrorStructName(rawResponse: any, op: any, code: string): string {
   if (rawResponse && rawResponse.$ref && typeof rawResponse.$ref === 'string') {
-    const key = rawResponse.$ref.split('/').pop() || '';
+    const key = rawResponse.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_') || '';
     if (/^[0-9]+$/.test(key)) {
       return `Error${key}`;
     }
@@ -253,7 +253,7 @@ export function getErrorStructName(rawResponse: any, op: any, code: string): str
       return `Response_${key}`;
     }
   }
-  const opId = op.operationId || 'op';
+  const opId = (op.operationId || 'op').replace(/[^a-zA-Z0-9_]/g, '_');
   return `${opId}_Error${code}`;
 }
 
@@ -284,7 +284,8 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
     return undefined;
   }
 
-  function collectAllReferencedSchemas(schema: any, name: string, depth = 0) {
+  function collectAllReferencedSchemas(schema: any, rawName: string, depth = 0) {
+    const name = rawName.replace(/[^a-zA-Z0-9_]/g, '_');
     if (!schema || typeof schema !== 'object' || !name || structs[name]) return;
     // Inline (non-$ref) nested objects have no stable identity to dedupe
     // by — only the generated name, which keeps growing along a cyclic
@@ -295,8 +296,12 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
     const resolved = schema.$ref ? resolver.resolveRef(schema.$ref) : schema;
     const fields = parseSchema(name, resolved, resolver);
 
-    // Always add the struct, even if it has 0 fields, to prevent dangling refs!
-    structs[name] = fields;
+    // Only add the struct if it's actually a struct schema!
+    // Adding non-structs (like arrays or maps) generates empty structs.
+    // We still traverse non-structs below (e.g. arrays) to find nested structs.
+    if (isStructSchema(resolved)) {
+      structs[name] = fields;
+    }
 
     // Traverse all properties (falling back to a merged allOf when the
     // schema has no properties of its own, e.g. { allOf: [{$ref: X}] })
@@ -307,12 +312,12 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
       for (const [propName, prop] of Object.entries<any>(traversalProperties)) {
         const propRef = prop && typeof prop === 'object' ? (prop.$ref || getSingleAllOfRef(prop)) : undefined;
         if (propRef) {
-          const refName = propRef.split('/').pop();
+          const refName = propRef.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_');
           if (refName) collectAllReferencedSchemas(resolver.resolveRef(propRef), refName, depth + 1);
         } else if (prop && typeof prop === 'object' && prop.type === 'array' && prop.items) {
           const itemsRef = prop.items && typeof prop.items === 'object' ? (prop.items.$ref || getSingleAllOfRef(prop.items)) : undefined;
           if (itemsRef) {
-            const refName = itemsRef.split('/').pop();
+            const refName = itemsRef.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_');
             if (refName) collectAllReferencedSchemas(resolver.resolveRef(itemsRef), refName, depth + 1);
           } else if (prop.items && typeof prop.items === 'object' && isStructSchema(prop.items)) {
             collectAllReferencedSchemas(prop.items, name + '_' + propName + '_Item', depth + 1);
@@ -325,7 +330,7 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
     // Traverse array items at root
     if (resolved && resolved.type === 'array' && resolved.items) {
       if (resolved.items && typeof resolved.items === 'object' && resolved.items.$ref) {
-        const refName = resolved.items.$ref.split('/').pop();
+        const refName = resolved.items.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_');
         if (refName) collectAllReferencedSchemas(resolver.resolveRef(resolved.items.$ref), refName, depth + 1);
       } else if (resolved.items && typeof resolved.items === 'object' && isStructSchema(resolved.items)) {
         collectAllReferencedSchemas(resolved.items, name + '_Item', depth + 1);
@@ -336,7 +341,7 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
       if (resolved && Array.isArray(resolved[combiner])) {
         for (const subSchema of resolved[combiner]) {
           if (subSchema && typeof subSchema === 'object' && subSchema.$ref) {
-            const refName = subSchema.$ref.split('/').pop();
+            const refName = subSchema.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_');
             if (refName) collectAllReferencedSchemas(resolver.resolveRef(subSchema.$ref), refName, depth + 1);
           } else if (subSchema && typeof subSchema === 'object') {
             collectAllReferencedSchemas(subSchema, name + '_' + combiner, depth + 1);
@@ -366,7 +371,7 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
     if (!schema) continue;
     const structName = /^[0-9]+$/.test(key) ? `Error${key}` : `Response_${key}`;
     if (schema.$ref) {
-      const refName = schema.$ref.split('/').pop();
+      const refName = schema.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_');
       if (refName) collectAllReferencedSchemas(resolver.resolveRef(schema.$ref), refName);
     } else if (typeof schema === 'object') {
       collectAllReferencedSchemas(schema, structName);
@@ -397,7 +402,7 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
         
         for (const schema of reqBodySchemas) {
           if (schema.$ref) {
-            const refName = schema.$ref.split('/').pop();
+            const refName = schema.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_');
             if (refName) collectAllReferencedSchemas(resolver.resolveRef(schema.$ref), refName);
           } else if (isStructSchema(schema)) {
             const requestStructName = generateStructName(operationId, method, pathStr, 'Request');
@@ -420,11 +425,11 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
             
             for (const schema of respSchemas) {
               if (schema.$ref) {
-                const refName = schema.$ref.split('/').pop();
+                const refName = schema.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_');
                 if (refName) collectAllReferencedSchemas(resolver.resolveRef(schema.$ref), refName);
               } else if (schema.type === 'array' && schema.items) {
                 if (schema.items.$ref) {
-                  const refName = schema.items.$ref.split('/').pop();
+                  const refName = schema.items.$ref.split('/').pop()?.replace(/[^a-zA-Z0-9_]/g, '_');
                   if (refName) collectAllReferencedSchemas(resolver.resolveRef(schema.items.$ref), refName);
                 } else if (isStructSchema(schema.items)) {
                   const responseStructName = generateStructName(operationId, method, pathStr, `Response${code}Item`);
