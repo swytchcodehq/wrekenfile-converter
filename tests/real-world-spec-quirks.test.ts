@@ -262,7 +262,9 @@ describe('inline struct name collisions across unrelated endpoints', () => {
     const methods = Object.values<any>(parsed.METHODS);
     const accountMethod = methods.find((m) => m.HTTP.ENDPOINT === '/api/bulk/2.0/accounts/lists');
     const contactMethod = methods.find((m) => m.HTTP.ENDPOINT === '/api/bulk/2.0/contacts/lists');
-    expect(accountMethod.RETURNS[0].RETURNTYPE).not.toBe(contactMethod?.RETURNS[0].RETURNTYPE);
+    expect(accountMethod).toBeDefined();
+    expect(contactMethod).toBeDefined();
+    expect(accountMethod.RETURNS[0].RETURNTYPE).not.toBe(contactMethod.RETURNS[0].RETURNTYPE);
 
     const accountStructName = accountMethod.RETURNS[0].RETURNTYPE.slice('STRUCT('.length, -1);
     const contactStructName = contactMethod.RETURNS[0].RETURNTYPE.slice('STRUCT('.length, -1);

@@ -219,17 +219,28 @@ export function generateStructName(operationId: string, method: string, path: st
   // paths into a short, human-friendly METHOD id, with collision handling
   // applied separately by resolveCanonicalIds). Using it here for inline
   // struct names causes unrelated endpoints to collide and silently clobber
-  // each other's fields in extractStructs. operationId is unique per the
-  // OpenAPI spec, and method+path is always unique, so use those instead.
+  // each other's fields in extractStructs.
+  //
+  // operationId is supposed to be unique per the OpenAPI spec, but
+  // real-world specs sometimes reuse it across many endpoints. method+path
+  // is always unique (paths/operation keys can't repeat within a spec), so
+  // mix it in unconditionally rather than relying on operationId alone —
+  // otherwise two endpoints sharing an operationId would still generate the
+  // same inline struct name and silently clobber each other's fields, the
+  // same failure mode this function was already fixed for.
+  // Sanitize the same way as operationId below: path segments commonly
+  // contain hyphens, colons, etc. (e.g. "/chart-data.json") that aren't
+  // valid identifier characters and would otherwise leak into the name.
+  const pathParts = path.replace(/[^a-zA-Z0-9_.]/g, '_').replace(/^_+|_+$/g, '');
+  const pathId = `${method.toLowerCase()}_${pathParts}`;
   if (operationId) {
     // Sanitize: some specs use non-identifier characters in operationId
     // (e.g. "recent/newvaluefeeds"), which would otherwise leak into the
     // generated STRUCT name.
     const safeId = operationId.replace(/[^a-zA-Z0-9_.]/g, '_');
-    return `${safeId}${suffix}`;
+    return `${safeId}_${pathId}${suffix}`;
   }
-  const pathParts = path.replace(/[\/{}]/g, '_').replace(/^_+|_+$/g, '');
-  return `${method.toLowerCase()}_${pathParts}${suffix}`;
+  return `${pathId}${suffix}`;
 }
 
 export function getErrorStructName(rawResponse: any, op: any, code: string): string {

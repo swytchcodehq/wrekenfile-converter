@@ -41,6 +41,7 @@ import {
   generateStructName,
   getErrorStructName,
   isStructSchema,
+  getSingleAllOfRef,
 } from './utils/schema-utils';
 
 
@@ -224,7 +225,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
   if (contentType === CONTENT_TYPE_JSON && requestBody.content[contentType]?.schema) {
     const bodySchema = requestBody.content[contentType].schema;
     let type: string;
-    if (bodySchema && bodySchema.$ref) {
+    if (bodySchema && (bodySchema.$ref || getSingleAllOfRef(bodySchema))) {
       type = getTypeFromSchema(bodySchema, resolver);
     } else if (bodySchema && isStructSchema(bodySchema)) {
       const requestStructName = generateStructName(operationId, method, path, 'Request');

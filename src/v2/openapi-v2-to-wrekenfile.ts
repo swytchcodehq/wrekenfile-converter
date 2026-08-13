@@ -34,6 +34,7 @@ import {
   generateStructName,
   getErrorStructName,
   isStructSchema,
+  getSingleAllOfRef,
 } from './utils/schema-utils';
 
 
@@ -210,7 +211,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
 
   if (bodyParam) {
     let type: string;
-    if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema?.$ref) {
+    if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema && (bodyParam.schema.$ref || getSingleAllOfRef(bodyParam.schema))) {
       type = getTypeFromSchema(bodyParam.schema, resolver);
     } else if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema && isStructSchema(bodyParam.schema)) {
       // Inline object schema - use generated struct name
@@ -464,8 +465,7 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       // resource), even though OpenAPI requires operationId to be unique.
       // Key the intermediate map by method+path (always unique) so those
       // operations don't silently overwrite each other before CANONICAL_ID
-      // renaming runs; generateMethodAlias's operationId-derived value is
-      // only used as a display alias input, never as the map key.
+      // renaming runs.
       const alias = `${method.toUpperCase()} ${pathStr}`;
       
       const summary = generateSummary(op, method, pathStr);
