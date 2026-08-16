@@ -316,7 +316,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     const bodySchema = requestBody.content[contentType].schema;
     if (bodySchema && bodySchema.properties) {
       for (const [key, prop] of Object.entries<any>(bodySchema.properties)) {
-        let typeRaw = getTypeFromSchema(prop, resolver);
+        const typeRaw = getTypeFromSchema(prop, resolver);
         let type = typeRaw;
         if (typeRaw === 'OBJECT' && !prop.$ref) {
            const requestStructName = generateStructName(operationId, method, path, 'Request');
