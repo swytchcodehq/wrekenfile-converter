@@ -27,9 +27,15 @@ export function mapSchemaToMapType(ap: any, resolver: RefResolver): string {
     return 'map[STRING]ANY';
   }
   if (ap.$ref) {
-    const resolved = resolver.resolveRef(ap.$ref);
-    if (resolved && resolved.type && resolved.type !== 'object') {
-      return `map[STRING]${mapType(resolved.type, resolved.format)}`;
+    const resolvedAp = resolver.resolveRef(ap.$ref);
+    if (resolvedAp && resolvedAp.type && resolvedAp.type !== 'object') {
+      return `map[STRING]${mapType(resolvedAp.type, resolvedAp.format)}`;
+    }
+    if (resolvedAp && !isStructSchema(resolvedAp)) {
+      if (resolvedAp.additionalProperties) {
+        return `map[STRING]${mapSchemaToMapType(resolvedAp.additionalProperties, resolver)}`;
+      }
+      return 'map[STRING]ANY';
     }
     return `map[STRING]STRUCT(${extractRefName(ap.$ref)})`;
   }
@@ -38,6 +44,12 @@ export function mapSchemaToMapType(ap: any, resolver: RefResolver): string {
       const resolvedItems = resolver.resolveRef(ap.items.$ref);
       if (resolvedItems && resolvedItems.type && resolvedItems.type !== 'object') {
         return `map[STRING][]${mapType(resolvedItems.type, resolvedItems.format)}`;
+      }
+      if (resolvedItems && !isStructSchema(resolvedItems)) {
+        if (resolvedItems.additionalProperties) {
+          return `map[STRING][]${mapSchemaToMapType(resolvedItems.additionalProperties, resolver)}`;
+        }
+        return 'map[STRING][]ANY';
       }
       return `map[STRING][]STRUCT(${extractRefName(ap.items.$ref)})`;
     }
@@ -95,6 +107,12 @@ export function getTypeFromSchema(schema: any, resolver: RefResolver): string {
       if (resolvedItems && resolvedItems.type && resolvedItems.type !== 'object') {
         return `[]${mapType(resolvedItems.type, resolvedItems.format)}`;
       }
+      if (resolvedItems && !isStructSchema(resolvedItems)) {
+        if (resolvedItems.additionalProperties) {
+          return `[]${mapSchemaToMapType(resolvedItems.additionalProperties, resolver)}`;
+        }
+        return '[]ANY';
+      }
       const refName = extractRefName(schema.items.$ref);
       return `[]STRUCT(${refName})`;
     } else if (schema.items) {
@@ -114,6 +132,9 @@ export function getTypeFromSchema(schema: any, resolver: RefResolver): string {
   }
   
   if (schema.additionalProperties) {
+    if (typeof schema.additionalProperties === 'object' && isStructSchema(schema.additionalProperties)) {
+      return 'map[STRING]OBJECT';
+    }
     const valueType = typeof schema.additionalProperties === 'object' && schema.additionalProperties.type
       ? mapType(schema.additionalProperties.type, schema.additionalProperties.format)
       : 'ANY';
@@ -193,8 +214,9 @@ export function parseSchema(name: string, schema: any, resolver: RefResolver, de
   if (schema.properties) {
     for (const [key, prop] of Object.entries<any>(schema.properties)) {
       let type = getTypeFromSchema(prop, resolver);
-      if (type === 'OBJECT') type = `STRUCT(${name}_${key})`;
-      if (type === '[]OBJECT') type = `[]STRUCT(${name}_${key}_Item)`;
+      if (type === 'OBJECT') type = `STRUCT(${sanitizeName(name + '_' + key)})`;
+      if (type === '[]OBJECT') type = `[]STRUCT(${sanitizeName(name + '_' + key + '_Item')})`;
+      if (type === 'map[STRING]OBJECT') type = `map[STRING]STRUCT(${sanitizeName(name + '_' + key + '_Value')})`;
       const required = (schema.required || []).includes(key);
       const field: any = {
         name: key,
@@ -211,8 +233,11 @@ export function parseSchema(name: string, schema: any, resolver: RefResolver, de
   // If a struct is empty (like Jira empty errors), provide a dummy field 
   // so the struct is not discarded by consumers expecting fields.
   // Although Wrekenfile spec doesn't explicitly mandate fields, it's safer.
-  // Wait, if it has 0 fields, let's just return [] and let extractStructs handle the empty struct creation.
-  return fields;
+  return fields.length > 0 ? fields : [{
+    name: 'value',
+    TYPE: 'ANY',
+    REQUIRED: false,
+  }];
 }
 
 export function generateStructName(operationId: string, method: string, path: string, suffix: string): string {
@@ -323,8 +348,20 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
           } else if (prop.items && typeof prop.items === 'object' && isStructSchema(prop.items)) {
             collectAllReferencedSchemas(prop.items, name + '_' + propName + '_Item', depth + 1);
           }
-        } else if (prop && typeof prop === 'object' && isStructSchema(prop)) {
-          collectAllReferencedSchemas(prop, name + '_' + propName, depth + 1);
+        } else if (prop && typeof prop === 'object') {
+          if (isStructSchema(prop)) {
+            collectAllReferencedSchemas(prop, name + '_' + propName, depth + 1);
+          } else if (prop.type === 'array' && prop.items && isStructSchema(prop.items)) {
+            collectAllReferencedSchemas(prop.items, name + '_' + propName + '_Item', depth + 1);
+          } else if (prop.additionalProperties && typeof prop.additionalProperties === 'object') {
+            const addlRef = prop.additionalProperties.$ref || getSingleAllOfRef(prop.additionalProperties);
+            if (addlRef) {
+              const refName = extractRefName(addlRef);
+              if (refName) collectAllReferencedSchemas(resolver.resolveRef(addlRef), refName, depth + 1);
+            } else if (isStructSchema(prop.additionalProperties)) {
+              collectAllReferencedSchemas(prop.additionalProperties, name + '_' + propName + '_Value', depth + 1);
+            }
+          }
         }
       }
     }
@@ -418,6 +455,15 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
           for (const p of op.parameters) {
             if (p.in === 'body' && p.schema) {
               reqBodySchemas.push(p.schema);
+            } else if (p.schema && isStructSchema(p.schema)) {
+              const structName = generateStructName(operationId, method, pathStr, `Param_${p.name}`);
+              collectAllReferencedSchemas(p.schema, structName);
+            } else if (p.schema && p.schema.type === 'array' && p.schema.items && isStructSchema(p.schema.items)) {
+              const structName = generateStructName(operationId, method, pathStr, `Param_${p.name}_Item`);
+              collectAllReferencedSchemas(p.schema.items, structName);
+            } else if (p.schema && p.schema.additionalProperties && typeof p.schema.additionalProperties === 'object' && isStructSchema(p.schema.additionalProperties)) {
+              const structName = generateStructName(operationId, method, pathStr, `Param_${p.name}_Value`);
+              collectAllReferencedSchemas(p.schema.additionalProperties, structName);
             }
           }
         }
@@ -429,6 +475,12 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
           } else if (isStructSchema(schema)) {
             const requestStructName = generateStructName(operationId, method, pathStr, 'Request');
             collectAllReferencedSchemas(schema, requestStructName);
+          } else if (schema.type === 'array' && schema.items && !schema.items.$ref && isStructSchema(schema.items)) {
+            const requestStructName = generateStructName(operationId, method, pathStr, 'RequestItem');
+            collectAllReferencedSchemas(schema.items, requestStructName);
+          } else if (schema.additionalProperties && typeof schema.additionalProperties === 'object' && !schema.additionalProperties.$ref && isStructSchema(schema.additionalProperties)) {
+            const requestStructName = generateStructName(operationId, method, pathStr, 'RequestValue');
+            collectAllReferencedSchemas(schema.additionalProperties, requestStructName);
           }
         }
 
@@ -463,6 +515,12 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
                   ? getErrorStructName(rawResp, op, code)
                   : generateStructName(operationId, method, pathStr, `Response${code}`);
                 collectAllReferencedSchemas(schema, responseStructName);
+              } else if (schema.additionalProperties && typeof schema.additionalProperties === 'object' && isStructSchema(schema.additionalProperties)) {
+                const statusCode = parseInt(code);
+                if (statusCode < 400) {
+                  const responseStructName = generateStructName(operationId, method, pathStr, `Response${code}Value`);
+                  collectAllReferencedSchemas(schema.additionalProperties, responseStructName);
+                }
               }
             }
           }

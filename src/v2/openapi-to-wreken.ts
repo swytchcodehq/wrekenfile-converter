@@ -34,7 +34,7 @@ import { resolveCanonicalIds, type MethodCanonicalInput } from './utils/canonica
 import { filterStructsByUsage } from './utils/struct-utils';
 import { computeConversionStats, type ConversionStats } from './utils/conversion-stats';
 
-import { RefResolver } from './utils/ref-utils';
+import { RefResolver, sanitizeName } from './utils/ref-utils';
 import {
   extractStructs,
   getTypeFromSchema,
@@ -149,7 +149,7 @@ function getHeadersForOperation(op: any, spec: any, method?: string, resolver?: 
   return headers;
 }
 
-function extractParameters(op: any, _spec: any, resolver: RefResolver): any[] {
+function extractParameters(op: any, _spec: any, resolver: RefResolver, operationId: string, method: string, pathStr: string): any[] {
   const inputParams: any[] = [];
   
   // v2.0.2: All parameters (path, query, header) must be in INPUTS with LOCATION
@@ -173,10 +173,18 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver): any[] {
     const paramSchema = param.schema || {};
     
     let type = 'STRING';
-    if (paramSchema.type) {
+    if (paramSchema) {
       type = getTypeFromSchema(paramSchema, resolver);
-    } else if (paramSchema.$ref) {
-      type = getTypeFromSchema(paramSchema, resolver);
+      if (type === 'OBJECT' && !paramSchema.$ref) {
+        const structName = generateStructName(operationId, method, pathStr, `Param_${param.name}`);
+        type = `STRUCT(${structName})`;
+      } else if (type === '[]OBJECT' && !paramSchema.$ref) {
+        const structName = generateStructName(operationId, method, pathStr, `Param_${param.name}_Item`);
+        type = `[]STRUCT(${structName})`;
+      } else if (type === 'map[STRING]OBJECT' && !paramSchema.$ref) {
+        const structName = generateStructName(operationId, method, pathStr, `Param_${param.name}_Value`);
+        type = `map[STRING]STRUCT(${structName})`;
+      }
     }
     
     const isRequired = param.required === true;
@@ -231,10 +239,15 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
       const requestStructName = generateStructName(operationId, method, path, 'Request');
       type = `STRUCT(${requestStructName})`;
     } else if (bodySchema) {
-      // Non-object inline schema (array, primitive, map) - no matching
-      // STRUCTS entry will ever be registered for it, so don't wrap it in
-      // a dangling STRUCT(...) reference.
+      // Non-object inline schema (array, primitive, map)
       type = getTypeFromSchema(bodySchema, resolver);
+      if (type === '[]OBJECT') {
+        const requestStructName = generateStructName(operationId, method, path, 'RequestItem');
+        type = `[]STRUCT(${requestStructName})`;
+      } else if (type === 'map[STRING]OBJECT') {
+        const requestStructName = generateStructName(operationId, method, path, 'RequestValue');
+        type = `map[STRING]STRUCT(${requestStructName})`;
+      }
     } else {
       type = 'ANY';
     }
@@ -263,7 +276,17 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     const bodySchema = requestBody.content[contentType].schema;
     if (bodySchema && bodySchema.properties) {
       for (const [key, prop] of Object.entries<any>(bodySchema.properties)) {
-        const type = prop && prop.format === 'binary' ? 'STRING' : getTypeFromSchema(prop, resolver);
+        let type = prop && prop.format === 'binary' ? 'STRING' : getTypeFromSchema(prop, resolver);
+        if (type === 'OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `STRUCT(${sanitizeName(requestStructName + '_' + key)})`;
+        } else if (type === '[]OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `[]STRUCT(${sanitizeName(requestStructName + '_' + key + '_Item')})`;
+        } else if (type === 'map[STRING]OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `map[STRING]STRUCT(${sanitizeName(requestStructName + '_' + key + '_Value')})`;
+        }
         const required = (bodySchema.required || []).includes(key);
         const hasDefault = prop && prop.default !== undefined;
         
@@ -293,7 +316,18 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     const bodySchema = requestBody.content[contentType].schema;
     if (bodySchema && bodySchema.properties) {
       for (const [key, prop] of Object.entries<any>(bodySchema.properties)) {
-        const type = getTypeFromSchema(prop, resolver);
+        let typeRaw = getTypeFromSchema(prop, resolver);
+        let type = typeRaw;
+        if (typeRaw === 'OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `STRUCT(${sanitizeName(requestStructName + '_' + key)})`;
+        } else if (typeRaw === '[]OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `[]STRUCT(${sanitizeName(requestStructName + '_' + key + '_Item')})`;
+        } else if (typeRaw === 'map[STRING]OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `map[STRING]STRUCT(${sanitizeName(requestStructName + '_' + key + '_Value')})`;
+        }
         const required = (bodySchema.required || []).includes(key);
         const hasDefault = prop && prop.default !== undefined;
         
@@ -361,6 +395,12 @@ function extractResponses(op: any, operationId: string, method: string, path: st
         if (returnType === 'OBJECT' && !schema.$ref) {
           const responseStructName = generateStructName(operationId, method, path, `Response${code}`);
           returnType = `STRUCT(${responseStructName})`;
+        } else if (returnType === '[]OBJECT' && !schema.$ref) {
+          const responseStructName = generateStructName(operationId, method, path, `Response${code}Item`);
+          returnType = `[]STRUCT(${responseStructName})`;
+        } else if (returnType === 'map[STRING]OBJECT' && !schema.$ref) {
+          const responseStructName = generateStructName(operationId, method, path, `Response${code}Value`);
+          returnType = `map[STRING]STRUCT(${responseStructName})`;
         }
       } else {
         // No schema but has content - might be empty body
@@ -511,7 +551,7 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       
       const { contentType, bodyType } = getContentTypeAndBodyType(opWithMergedParams);
       const headers = getHeadersForOperation(opWithMergedParams, spec, method, resolver);
-      const pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, resolver);
+      const pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, resolver, operationId, method, pathStr);
       const bodyParams = extractRequestBody(opWithMergedParams, operationId, method, pathStr, spec, resolver);
       const inputParams = [...pathQueryHeaderParams, ...bodyParams];
       const returns = extractResponses(opWithMergedParams, operationId, method, pathStr, spec, resolver);
@@ -639,7 +679,8 @@ function renameMethodsToCanonicalId(methods: Record<string, any>): Record<string
   const renamed: Record<string, any> = {};
   for (const [oldId, methodData] of Object.entries<any>(methods)) {
     const canonicalId: string | undefined = methodData.CANONICAL_ID;
-    const key = canonicalId || oldId;
+    let key = canonicalId || oldId;
+    key = key.replace(/-/g, '_');
     renamed[key] = methodData;
   }
   return renamed;
