@@ -7,6 +7,7 @@ import { generateYamlString } from './utils/yaml-utils';
 import { 
   WREKENFILE_VERSION,
   EXECUTION_MODE_SYNC,
+  EXECUTION_MODE_ASYNC,
   TYPE_ANY,
   BODYTYPE_RAW,
   CONTENT_TYPE_JSON,
@@ -517,10 +518,16 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
         methodDef.HTTP.BODYTYPE = bodyType;
       }
 
+      // Determine Execution Mode
+      let executionMode = EXECUTION_MODE_SYNC;
+      if (op.responses && op.responses['202']) {
+        executionMode = EXECUTION_MODE_ASYNC;
+      }
+
       // EXECUTION section (mandatory) - v2.0.2 requires KIND
       methodDef.EXECUTION = {
         KIND: 'http',
-        MODE: EXECUTION_MODE_SYNC, // REST APIs are synchronous request/response
+        MODE: executionMode,
       };
 
       // INPUTS section (optional)

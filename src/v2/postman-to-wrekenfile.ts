@@ -8,6 +8,7 @@ import {
   BASE_URL_VARIABLE_NAMES, 
   SENSITIVE_KEYS, 
   EXECUTION_MODE_SYNC,
+  EXECUTION_MODE_ASYNC,
   TYPE_VOID,
   BODYTYPE_RAW,
   CONTENT_TYPE_JSON,
@@ -672,10 +673,21 @@ function extractOperations(collection: any, variables: Record<string, string>): 
         methodDef.HTTP.BODYTYPE = bodyType;
       }
 
+      // Determine Execution Mode
+      let executionMode = EXECUTION_MODE_SYNC;
+      if (item.response && Array.isArray(item.response)) {
+        for (const resp of item.response) {
+          if (resp.code === 202 || resp.code === '202') {
+            executionMode = EXECUTION_MODE_ASYNC;
+            break;
+          }
+        }
+      }
+
       // EXECUTION section (mandatory) - v2.0.2 requires KIND
       methodDef.EXECUTION = {
         KIND: 'http',
-        MODE: EXECUTION_MODE_SYNC, // REST APIs are synchronous request/response
+        MODE: executionMode,
       };
 
       // INPUTS section (optional)
