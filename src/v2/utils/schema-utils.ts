@@ -342,7 +342,7 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
     // path (e.g. recursive expression/AST schemas) and never repeats. Cap
     // depth so such cycles can't blow the call stack; the pathological
     // leaf just won't get a struct definition beyond this point.
-    if (depth > 20) return;
+    if (depth > 50) return;
     const resolved = schema.$ref ? resolver.resolveRef(schema.$ref) : schema;
     const fields = parseSchema(name, resolved, resolver);
 
