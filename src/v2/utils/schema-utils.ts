@@ -29,6 +29,12 @@ export function mapSchemaToMapType(ap: any, resolver: RefResolver): string {
   if (ap.$ref) {
     const resolvedAp = resolver.resolveRef(ap.$ref);
     if (resolvedAp && resolvedAp.type && resolvedAp.type !== 'object') {
+      if (resolvedAp.type === 'array') {
+        const nestedType = getTypeFromSchema(resolvedAp, resolver);
+        if (nestedType === '[]OBJECT') return `map[STRING][]STRUCT(${extractRefName(ap.$ref)}_Item)`;
+        if (nestedType === 'map[STRING]OBJECT') return `map[STRING]map[STRING]STRUCT(${extractRefName(ap.$ref)}_Value)`;
+        return `map[STRING]${nestedType}`;
+      }
       return `map[STRING]${mapType(resolvedAp.type, resolvedAp.format)}`;
     }
     if (resolvedAp && !isStructSchema(resolvedAp)) {
@@ -43,6 +49,12 @@ export function mapSchemaToMapType(ap: any, resolver: RefResolver): string {
     if (ap.items.$ref) {
       const resolvedItems = resolver.resolveRef(ap.items.$ref);
       if (resolvedItems && resolvedItems.type && resolvedItems.type !== 'object') {
+        if (resolvedItems.type === 'array') {
+          const nestedType = getTypeFromSchema(resolvedItems, resolver);
+          if (nestedType === '[]OBJECT') return `map[STRING][][]STRUCT(${extractRefName(ap.items.$ref)}_Item)`;
+          if (nestedType === 'map[STRING]OBJECT') return `map[STRING][]map[STRING]STRUCT(${extractRefName(ap.items.$ref)}_Value)`;
+          return `map[STRING][]${nestedType}`;
+        }
         return `map[STRING][]${mapType(resolvedItems.type, resolvedItems.format)}`;
       }
       if (resolvedItems && !isStructSchema(resolvedItems)) {
@@ -90,6 +102,12 @@ export function getTypeFromSchema(schema: any, resolver: RefResolver): string {
   if (schema.$ref) {
     const resolvedSchema = resolver.resolveRef(schema.$ref);
     if (resolvedSchema && resolvedSchema.type && resolvedSchema.type !== 'object') {
+      if (resolvedSchema.type === 'array') {
+        const nestedType = getTypeFromSchema(resolvedSchema, resolver);
+        if (nestedType === '[]OBJECT') return `[]STRUCT(${extractRefName(schema.$ref)}_Item)`;
+        if (nestedType === 'map[STRING]OBJECT') return `map[STRING]STRUCT(${extractRefName(schema.$ref)}_Value)`;
+        return nestedType;
+      }
       return mapType(resolvedSchema.type, resolvedSchema.format);
     }
     if (resolvedSchema && !isStructSchema(resolvedSchema)) {
@@ -105,6 +123,12 @@ export function getTypeFromSchema(schema: any, resolver: RefResolver): string {
     if (schema.items && schema.items.$ref) {
       const resolvedItems = resolver.resolveRef(schema.items.$ref);
       if (resolvedItems && resolvedItems.type && resolvedItems.type !== 'object') {
+        if (resolvedItems.type === 'array') {
+          const nestedType = getTypeFromSchema(resolvedItems, resolver);
+          if (nestedType === '[]OBJECT') return `[][]STRUCT(${extractRefName(schema.items.$ref)}_Item)`;
+          if (nestedType === 'map[STRING]OBJECT') return `[]map[STRING]STRUCT(${extractRefName(schema.items.$ref)}_Value)`;
+          return `[]${nestedType}`;
+        }
         return `[]${mapType(resolvedItems.type, resolvedItems.format)}`;
       }
       if (resolvedItems && !isStructSchema(resolvedItems)) {
