@@ -178,13 +178,13 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver, operation
       type = getTypeFromSchema(paramSchema, resolver);
       if (type === 'OBJECT' && !paramSchema.$ref) {
         const structName = generateStructName(operationId, method, pathStr, `Param_${param.name}`);
-        type = `STRUCT(${structName})`;
+        type = `STRUCT(${sanitizeName(structName)})`;
       } else if (type === '[]OBJECT' && !paramSchema.$ref) {
         const structName = generateStructName(operationId, method, pathStr, `Param_${param.name}_Item`);
-        type = `[]STRUCT(${structName})`;
+        type = `[]STRUCT(${sanitizeName(structName)})`;
       } else if (type === 'map[STRING]OBJECT' && !paramSchema.$ref) {
         const structName = generateStructName(operationId, method, pathStr, `Param_${param.name}_Value`);
-        type = `map[STRING]STRUCT(${structName})`;
+        type = `map[STRING]STRUCT(${sanitizeName(structName)})`;
       }
     }
     
@@ -221,7 +221,10 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver, operation
 
 function extractRequestBody(op: any, operationId: string, method: string, path: string, _spec: any, resolver: RefResolver): any[] {
   const inputParams: any[] = [];
-  const requestBody = op.requestBody;
+  let requestBody = op.requestBody;
+  if (requestBody && requestBody.$ref) {
+    requestBody = resolver.resolveRef(requestBody.$ref);
+  }
   if (!requestBody?.content) {
     return inputParams;
   }
@@ -483,11 +486,7 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
           const schema = jsonContent.schema;
           if (schema.$ref) {
             errorType = getTypeFromSchema(schema, resolver);
-          } else if (schema.type && schema.type !== 'object') {
-            // Primitive / array error schema — emit the primitive type
-            // directly instead of wrapping in a dangling STRUCT(...).
-            errorType = getTypeFromSchema(schema, resolver);
-          } else {
+          } else if (isStructSchema(schema)) {
             // Inline object error schema. Name it so extractStructs can
             // register the matching definition. Shared components.responses
             // entries get a stable name (Error{code} or Response_{key});
@@ -495,6 +494,9 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
             // name so two different 400 bodies don't collide on `Error400`.
             const errorStructName = getErrorStructName(rawResponse, op, code);
             errorType = `STRUCT(${errorStructName})`;
+          } else {
+            // Primitive / array error schema / non-struct object
+            errorType = getTypeFromSchema(schema, resolver);
           }
         }
       }
@@ -521,12 +523,20 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
   // Valid HTTP methods
   const validMethods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options', 'trace'];
   
-  // Check if paths exists and is an object
-  if (!spec.paths || typeof spec.paths !== 'object') {
+  // Combine paths and webhooks (OpenAPI 3.1)
+  const pathLikeObjects: Array<{ pathStr: string, pathMethods: any, isWebhook: boolean }> = [];
+  if (spec.paths && typeof spec.paths === 'object') {
+    pathLikeObjects.push(...Object.entries<any>(spec.paths).map(([k, v]) => ({ pathStr: k, pathMethods: v, isWebhook: false })));
+  }
+  if (spec.webhooks && typeof spec.webhooks === 'object') {
+    pathLikeObjects.push(...Object.entries<any>(spec.webhooks).map(([k, v]) => ({ pathStr: k, pathMethods: v, isWebhook: true })));
+  }
+  
+  if (pathLikeObjects.length === 0) {
     return methods;
   }
   
-  for (const [pathStr, pathMethods] of Object.entries<any>(spec.paths)) {
+  for (const { pathStr, pathMethods, isWebhook } of pathLikeObjects) {
     const pathLevelParams = pathMethods.parameters || [];
     
     for (const [method, op] of Object.entries<any>(pathMethods)) {
@@ -594,8 +604,15 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
 
       // Determine Execution Mode
       let executionMode = EXECUTION_MODE_SYNC;
-      if (op.callbacks || (op.responses && op.responses['202'])) {
+      if (isWebhook || op.callbacks) {
         executionMode = EXECUTION_MODE_ASYNC;
+      } else if (op.responses) {
+        for (const respCode of Object.keys(op.responses)) {
+          if (respCode.startsWith('202')) {
+            executionMode = EXECUTION_MODE_ASYNC;
+            break;
+          }
+        }
       }
 
       // EXECUTION section (mandatory) - v2.0.2 requires KIND

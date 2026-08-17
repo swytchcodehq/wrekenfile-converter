@@ -78,7 +78,7 @@ describe('OpenAPI v3 → Wrekenfile converter', () => {
 
     // Pet and NewPet schemas should produce structs
     const structNames = Object.keys(parsed.STRUCTS);
-    expect(structNames.length).toBeGreaterThanOrEqual(1);
+    expect(structNames.length).toBeGreaterThan(0);
   });
 
   it('includes SUMMARY for methods', () => {
@@ -100,10 +100,9 @@ describe('OpenAPI v3 → Wrekenfile converter', () => {
       (m) => m.HTTP?.METHOD === 'GET' && m.HTTP?.ENDPOINT?.includes('/pets') && !m.HTTP?.ENDPOINT?.includes('{')
     );
     expect(listPets).toBeDefined();
-    if (listPets?.INPUTS) {
-      // limit parameter should exist somewhere in inputs
-      expect(listPets.INPUTS.length).toBeGreaterThan(0);
-    }
+    expect(listPets.INPUTS).toBeDefined();
+    // limit parameter should exist somewhere in inputs
+    expect(listPets.INPUTS.length).toBeGreaterThan(0);
   });
 
   it('includes error responses', () => {
@@ -114,8 +113,8 @@ describe('OpenAPI v3 → Wrekenfile converter', () => {
     const createPet = Object.values<any>(parsed.METHODS).find(
       (m) => m.HTTP?.METHOD === 'POST' && m.HTTP?.ENDPOINT?.includes('/pets')
     );
-    if (createPet?.ERRORS) {
-      expect(createPet.ERRORS.length).toBeGreaterThan(0);
-    }
+    expect(createPet).toBeDefined();
+    expect(createPet.ERRORS).toBeDefined();
+    expect(createPet.ERRORS.length).toBeGreaterThan(0);
   });
 });

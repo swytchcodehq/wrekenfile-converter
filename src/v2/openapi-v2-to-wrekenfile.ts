@@ -28,7 +28,7 @@ import { resolveCanonicalIds, type MethodCanonicalInput } from './utils/canonica
 import { filterStructsByUsage } from './utils/struct-utils';
 import { computeConversionStats, type ConversionStats } from './utils/conversion-stats';
 
-import { RefResolver } from './utils/ref-utils';
+import { RefResolver, sanitizeName } from './utils/ref-utils';
 import {
   extractStructs,
   getTypeFromSchema,
@@ -217,7 +217,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     } else if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema && isStructSchema(bodyParam.schema)) {
       // Inline object schema - use generated struct name
       const requestStructName = generateStructName(operationId, method, path, 'Request');
-      type = `STRUCT(${requestStructName})`;
+      type = `STRUCT(${sanitizeName(requestStructName)})`;
     } else if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema) {
       // Non-object inline schema (array, primitive, map) - no matching
       // STRUCTS entry will ever be registered for it, so don't wrap it in
@@ -409,17 +409,16 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
         const schema = actualResponse.schema;
         if (schema.$ref) {
           errorType = getTypeFromSchema(schema, resolver);
-        } else if (schema.type && schema.type !== 'object') {
-          // Primitive / array error schema — emit the primitive type directly
-          // instead of wrapping in a dangling STRUCT(...).
-          errorType = getTypeFromSchema(schema, resolver);
-        } else {
+        } else if (isStructSchema(schema)) {
           // Inline object error schema — generate a struct name. Shared
           // Swagger v2 responses (spec.responses.X) get a stable name so the
           // corresponding struct registered by extractStructs is the same one
           // extractErrors references.
           const errorStructName = getErrorStructName(response, op, code);
           errorType = `STRUCT(${errorStructName})`;
+        } else {
+          // Primitive / array error schema / non-struct object
+          errorType = getTypeFromSchema(schema, resolver);
         }
       }
 

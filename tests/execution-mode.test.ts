@@ -57,6 +57,40 @@ describe('EXECUTION MODE detection', () => {
     expect(Object.values<any>(parsed.METHODS)[0].EXECUTION.MODE).toBe('async');
   });
 
+  it('assigns async mode when response code is a string containing 202 like "202 Accepted"', () => {
+    const spec = {
+      openapi: '3.0.0',
+      info: { title: 'async-api', version: '1.0' },
+      servers: [{ url: 'https://example.com' }],
+      paths: {
+        '/test': {
+          get: { operationId: 'TestAsync', responses: { '202 Accepted': { description: 'accepted' } } },
+        },
+      },
+    };
+    const result = generateV3Wrekenfile(spec, __dirname);
+    const parsed = yamlLoad(result) as any;
+    expect(Object.values<any>(parsed.METHODS)[0].EXECUTION.MODE).toBe('async');
+  });
+
+  it('assigns async mode for all webhooks endpoints', () => {
+    const spec = {
+      openapi: '3.1.0',
+      info: { title: 'async-api', version: '1.0' },
+      servers: [{ url: 'https://example.com' }],
+      webhooks: {
+        'myWebhook': {
+          post: { operationId: 'TestWebhook', responses: { '200': { description: 'ok' } } },
+        },
+      },
+    };
+    const result = generateV3Wrekenfile(spec, __dirname);
+    const parsed = yamlLoad(result) as any;
+    const methods = Object.values<any>(parsed.METHODS);
+    expect(methods.length).toBe(1);
+    expect(methods[0].EXECUTION.MODE).toBe('async');
+  });
+
   it('assigns async mode when 202 is present in Swagger v2', () => {
     const spec = {
       swagger: '2.0',

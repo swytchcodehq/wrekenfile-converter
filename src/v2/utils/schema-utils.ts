@@ -342,7 +342,7 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
     // path (e.g. recursive expression/AST schemas) and never repeats. Cap
     // depth so such cycles can't blow the call stack; the pathological
     // leaf just won't get a struct definition beyond this point.
-    if (depth > 50) return;
+    if (depth > 20) return;
     const resolved = schema.$ref ? resolver.resolveRef(schema.$ref) : schema;
     const fields = parseSchema(name, resolved, resolver);
 
@@ -461,22 +461,42 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
     }
   }
   
-  // Extract inline schemas from operations
+  // Combine paths and webhooks (OpenAPI 3.1)
+  const pathLikeObjects: Array<{ pathStr: string, methods: any }> = [];
   if (spec.paths && typeof spec.paths === 'object') {
-    for (const [pathStr, methods] of Object.entries<any>(spec.paths)) {
-      for (const [method, op] of Object.entries<any>(methods)) {
+    pathLikeObjects.push(...Object.entries<any>(spec.paths).map(([k, v]) => ({ pathStr: k, methods: v })));
+  }
+  if (spec.webhooks && typeof spec.webhooks === 'object') {
+    pathLikeObjects.push(...Object.entries<any>(spec.webhooks).map(([k, v]) => ({ pathStr: k, methods: v })));
+  }
+
+  for (const { pathStr, methods } of pathLikeObjects) {
+    for (const [method, op] of Object.entries<any>(methods)) {
         if (!['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'].includes(method.toLowerCase())) continue;
         const operationId = op.operationId || `${method}-${pathStr.replace(/[\/{}]/g, '-')}`;
         
         // Extract request body schemas (v3 and v2)
         const reqBodySchemas: any[] = [];
-        if (op.requestBody?.content) {
-          for (const [_contentType, content] of Object.entries<any>(op.requestBody.content)) {
+        let reqBody = op.requestBody;
+        if (reqBody && reqBody.$ref) {
+          reqBody = resolver.resolveRef(reqBody.$ref);
+        }
+        if (reqBody?.content) {
+          for (const [_contentType, content] of Object.entries<any>(reqBody.content)) {
             if (content?.schema) reqBodySchemas.push(content.schema);
           }
         }
-        if (op.parameters) {
-          for (const p of op.parameters) {
+        const pathLevelParams = methods.parameters || [];
+        const opParams = op.parameters || [];
+        const allParams = [...pathLevelParams, ...opParams];
+        
+        if (allParams.length > 0) {
+          for (let p of allParams) {
+            if (p.$ref) {
+              p = resolver.resolveRef(p.$ref);
+            }
+            if (!p) continue;
+            
             if (p.in === 'body' && p.schema) {
               reqBodySchemas.push(p.schema);
             } else if (p.schema && isStructSchema(p.schema)) {
@@ -534,21 +554,38 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
                   collectAllReferencedSchemas(schema.items, responseStructName);
                 }
               } else if (isStructSchema(schema)) {
-                const statusCode = parseInt(code);
-                const responseStructName = statusCode >= 400
+                let isError = false;
+                const normalizedCode = code.toLowerCase();
+                if (normalizedCode === 'default') {
+                  isError = true;
+                } else if (normalizedCode.endsWith('xx')) {
+                  isError = parseInt(normalizedCode.charAt(0)) >= 4;
+                } else {
+                  isError = parseInt(code) >= 400;
+                }
+                
+                const responseStructName = isError
                   ? getErrorStructName(rawResp, op, code)
                   : generateStructName(operationId, method, pathStr, `Response${code}`);
                 collectAllReferencedSchemas(schema, responseStructName);
               } else if (schema.additionalProperties && typeof schema.additionalProperties === 'object' && isStructSchema(schema.additionalProperties)) {
-                const statusCode = parseInt(code);
-                if (statusCode < 400) {
+                let isError = false;
+                const normalizedCode = code.toLowerCase();
+                if (normalizedCode === 'default') {
+                  isError = true;
+                } else if (normalizedCode.endsWith('xx')) {
+                  isError = parseInt(normalizedCode.charAt(0)) >= 4;
+                } else {
+                  isError = parseInt(code) >= 400;
+                }
+                
+                if (!isError) {
                   const responseStructName = generateStructName(operationId, method, pathStr, `Response${code}Value`);
                   collectAllReferencedSchemas(schema.additionalProperties, responseStructName);
                 }
               }
             }
           }
-        }
       }
     }
   }
