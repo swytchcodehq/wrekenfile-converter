@@ -53,6 +53,24 @@ describe('validateOpenApiV3Spec', () => {
       validateOpenApiV3Spec({ openapi: '3.0.0', info: { title: 'T', version: '1' } })
     ).toThrow(/paths/i);
   });
+
+  it('rejects array values for paths and webhooks', () => {
+    expect(() =>
+      validateOpenApiV3Spec({
+        openapi: '3.0.0',
+        info: { title: 'Test', version: '1.0' },
+        paths: [],
+      })
+    ).toThrow(/paths/i);
+
+    expect(() =>
+      validateOpenApiV3Spec({
+        openapi: '3.1.0',
+        info: { title: 'Test', version: '1.0' },
+        webhooks: [],
+      })
+    ).toThrow(/paths/i);
+  });
 });
 
 describe('validateOpenApiV2Spec', () => {

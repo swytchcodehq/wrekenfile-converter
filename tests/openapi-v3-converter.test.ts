@@ -117,4 +117,35 @@ describe('OpenAPI v3 → Wrekenfile converter', () => {
     expect(createPet.ERRORS).toBeDefined();
     expect(createPet.ERRORS.length).toBeGreaterThan(0);
   });
+
+  it('correctly maps 4XX and 5XX wildcard error response keys to 400 and 500 status codes', () => {
+    const wildcardSpec = {
+      openapi: '3.0.0',
+      info: { title: 'wildcard-api', version: '1.0' },
+      servers: [{ url: 'https://example.com' }],
+      paths: {
+        '/test': {
+          get: {
+            operationId: 'TestWildcards',
+            responses: {
+              '4XX': { description: 'client error' },
+              '5xx': { description: 'server error' },
+              'default': { description: 'unknown error' }
+            }
+          }
+        }
+      }
+    };
+    
+    const result = generateWrekenfile(wildcardSpec, FIXTURES_DIR);
+    const parsed = yamlLoad(result) as any;
+    const errors = Object.values<any>(parsed.METHODS)[0].ERRORS;
+    
+    expect(errors).toBeDefined();
+    expect(errors.length).toBe(3);
+    
+    const statuses = errors.map((e: any) => e.STATUS).sort();
+    // 4XX -> 400, 5xx -> 500, default -> 500
+    expect(statuses).toEqual([400, 500, 500]);
+  });
 });

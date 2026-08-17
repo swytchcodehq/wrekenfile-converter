@@ -125,4 +125,39 @@ describe('EXECUTION MODE detection', () => {
     const parsed = yamlLoad(result) as any;
     expect(Object.values<any>(parsed.METHODS)[0].EXECUTION.MODE).toBe('async');
   });
+
+  it('assigns sync mode by default for Swagger v2 when 202 is absent', () => {
+    const spec = {
+      swagger: '2.0',
+      info: { title: 'sync-api', version: '1.0' },
+      host: 'example.com',
+      basePath: '/',
+      paths: {
+        '/test': {
+          get: { operationId: 'TestSync', responses: { '200': { description: 'ok' } } },
+        },
+      },
+    };
+    const result = generateV2Wrekenfile(spec, __dirname);
+    const parsed = yamlLoad(result) as any;
+    expect(Object.values<any>(parsed.METHODS)[0].EXECUTION.MODE).toBe('sync');
+  });
+
+  it('assigns sync mode by default for Postman when 202 is absent', () => {
+    const spec = {
+      info: { name: 'sync-api', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+      item: [
+        {
+          name: 'TestSync',
+          request: { method: 'GET', url: 'https://example.com/test' },
+          response: [
+            { code: 200, status: 'OK' }
+          ]
+        }
+      ]
+    };
+    const result = generatePostmanWrekenfile(spec, {});
+    const parsed = yamlLoad(result) as any;
+    expect(Object.values<any>(parsed.METHODS)[0].EXECUTION.MODE).toBe('sync');
+  });
 });

@@ -221,10 +221,7 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver, operation
 
 function extractRequestBody(op: any, operationId: string, method: string, path: string, _spec: any, resolver: RefResolver): any[] {
   const inputParams: any[] = [];
-  let requestBody = op.requestBody;
-  if (requestBody && requestBody.$ref) {
-    requestBody = resolver.resolveRef(requestBody.$ref);
-  }
+  const requestBody = op.requestBody;
   if (!requestBody?.content) {
     return inputParams;
   }
@@ -470,7 +467,14 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
 
   // Extract error responses (4xx, 5xx)
   for (const [code, rawResponse] of Object.entries<any>(op.responses || {})) {
-    const statusCode = parseInt(code);
+    const normalizedCode = code.toUpperCase();
+    let statusCode = parseInt(code);
+    
+    if (normalizedCode.endsWith('XX')) {
+      // Maps 4XX -> 400, 5XX -> 500
+      statusCode = parseInt(normalizedCode.charAt(0)) * 100;
+    }
+
     if (isNaN(statusCode) && code !== 'default') continue;
 
     if (statusCode >= 400 || code === 'default') {
@@ -558,7 +562,14 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       
       // Merge path-level and operation-level parameters (OpenAPI v3)
       const allParams = [...pathLevelParams, ...(op.parameters || [])];
-      const opWithMergedParams = { ...op, parameters: allParams };
+      
+      // Resolve request body early so HTTP metadata extraction sees it
+      let resolvedRequestBody = op.requestBody;
+      if (resolvedRequestBody && resolvedRequestBody.$ref) {
+        resolvedRequestBody = resolver.resolveRef(resolvedRequestBody.$ref);
+      }
+      
+      const opWithMergedParams = { ...op, parameters: allParams, requestBody: resolvedRequestBody };
       
       const { contentType, bodyType } = getContentTypeAndBodyType(opWithMergedParams);
       const headers = getHeadersForOperation(opWithMergedParams, spec, method, resolver);

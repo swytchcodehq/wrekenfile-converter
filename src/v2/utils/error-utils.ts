@@ -97,8 +97,8 @@ export function validateOpenApiV3Spec(spec: any): void {
   }
 
   if (
-    (!spec.paths || typeof spec.paths !== 'object') &&
-    (!spec.webhooks || typeof spec.webhooks !== 'object')
+    (!spec.paths || typeof spec.paths !== 'object' || Array.isArray(spec.paths)) &&
+    (!spec.webhooks || typeof spec.webhooks !== 'object' || Array.isArray(spec.webhooks))
   ) {
     throw createConverterError(
       "Invalid OpenAPI v3 specification: missing or invalid 'paths' or 'webhooks' field",
