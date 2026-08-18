@@ -247,8 +247,9 @@ function validateInitSection(data: any, result: ValidationResult): void {
   }
 
   // If using V2 DEFAULTS format directly at root
-  if (data.DEFAULTS) {
-    if (typeof data.DEFAULTS !== 'object' || Array.isArray(data.DEFAULTS)) {
+  if ('DEFAULTS' in data) {
+    if (typeof data.DEFAULTS !== 'object' || data.DEFAULTS === null || Array.isArray(data.DEFAULTS)) {
+      result.isValid = false;
       result.errors.push('DEFAULTS must be an object');
     }
     return;
@@ -303,7 +304,7 @@ function validateInterfacesSection(data: any, result: ValidationResult): void {
     return;
   }
 
-  if (typeof interfacesSection !== 'object') {
+  if (typeof interfacesSection !== 'object' || interfacesSection === null || Array.isArray(interfacesSection)) {
     result.isValid = false;
     result.errors.push(`${sectionName} must be an object`);
     return;
@@ -341,11 +342,11 @@ function validateInterface(interfaceData: any, interfaceName: string, result: Va
   }
 
   // Validate DESC / SUMMARY
-  if (interfaceData.DESC && typeof interfaceData.DESC !== 'string') {
+  if ('DESC' in interfaceData && typeof interfaceData.DESC !== 'string') {
     result.isValid = false;
     result.errors.push(`Interface '${interfaceName}'.DESC must be a string`);
   }
-  if (interfaceData.SUMMARY && typeof interfaceData.SUMMARY !== 'string') {
+  if ('SUMMARY' in interfaceData && typeof interfaceData.SUMMARY !== 'string') {
     result.isValid = false;
     result.errors.push(`Interface '${interfaceName}'.SUMMARY must be a string`);
   }
@@ -353,7 +354,7 @@ function validateInterface(interfaceData: any, interfaceName: string, result: Va
   // ENDPOINT and VISIBILITY are optional in V2 (ENDPOINT moved to HTTP)
 
   // Validate VISIBILITY
-  if (interfaceData.VISIBILITY) {
+  if ('VISIBILITY' in interfaceData) {
     const validVisibilities = ['PUBLIC', 'PRIVATE', 'INTERNAL'];
     if (!validVisibilities.includes(interfaceData.VISIBILITY)) {
       result.isValid = false;
@@ -362,17 +363,17 @@ function validateInterface(interfaceData: any, interfaceName: string, result: Va
   }
 
   // Validate HTTP section
-  if (interfaceData.HTTP) {
+  if ('HTTP' in interfaceData) {
     validateHttpSection(interfaceData.HTTP, interfaceName, result);
   }
 
   // Validate INPUTS
-  if (interfaceData.INPUTS) {
+  if ('INPUTS' in interfaceData) {
     validateInputs(interfaceData.INPUTS, interfaceName, result);
   }
 
   // Validate RETURNS
-  if (interfaceData.RETURNS) {
+  if ('RETURNS' in interfaceData) {
     validateReturns(interfaceData.RETURNS, interfaceName, result);
   }
 }
@@ -398,7 +399,7 @@ function validateHttpSection(httpData: any, interfaceName: string, result: Valid
   }
 
   // Validate METHOD
-  if (httpData.METHOD) {
+  if ('METHOD' in httpData) {
     const validMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
     if (!validMethods.includes(httpData.METHOD)) {
       result.isValid = false;
@@ -406,8 +407,16 @@ function validateHttpSection(httpData: any, interfaceName: string, result: Valid
     }
   }
 
+  // Validate ENDPOINT
+  if ('ENDPOINT' in httpData) {
+    if (typeof httpData.ENDPOINT !== 'string') {
+      result.isValid = false;
+      result.errors.push(`Interface '${interfaceName}'.HTTP.ENDPOINT must be a string`);
+    }
+  }
+
   // Validate HEADERS (can be object in V2)
-  if (httpData.HEADERS) {
+  if ('HEADERS' in httpData) {
     if (typeof httpData.HEADERS !== 'object' || Array.isArray(httpData.HEADERS)) {
       // It's allowed to be an array in V1, but in V2 it's usually an object.
       // If it's an array, we'll just allow it for backward compatibility.
@@ -424,7 +433,7 @@ function validateHttpSection(httpData: any, interfaceName: string, result: Valid
   }
 
   // Validate BODYTYPE
-  if (httpData.BODYTYPE) {
+  if ('BODYTYPE' in httpData) {
     if (typeof httpData.BODYTYPE !== 'string') {
       result.isValid = false;
       result.errors.push(`Interface '${interfaceName}'.HTTP.BODYTYPE must be a string`);
@@ -501,19 +510,25 @@ function validateV2InputParam(paramProps: any, paramName: string, i: number, int
         result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}] missing required field: type/TYPE`);
     }
     
-    if (typeVal && typeof typeVal !== 'string') {
-        result.isValid = false;
-        result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].type must be a string`);
+    if ('type' in paramProps || 'TYPE' in paramProps) {
+        if (typeof typeVal !== 'string') {
+            result.isValid = false;
+            result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].type must be a string`);
+        }
     }
 
-    if (reqVal !== undefined && typeof reqVal !== 'string' && typeof reqVal !== 'boolean') {
-        result.isValid = false;
-        result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].required must be a string or boolean`);
+    if ('required' in paramProps || 'REQUIRED' in paramProps) {
+        if (typeof reqVal !== 'string' && typeof reqVal !== 'boolean') {
+            result.isValid = false;
+            result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].required must be a string or boolean`);
+        }
     }
 
-    if (locVal && typeof locVal !== 'string') {
-        result.isValid = false;
-        result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].location must be a string`);
+    if ('location' in paramProps || 'LOCATION' in paramProps) {
+        if (typeof locVal !== 'string') {
+            result.isValid = false;
+            result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].location must be a string`);
+        }
     }
 }
 
@@ -560,21 +575,27 @@ function validateReturns(returns: any, interfaceName: string, result: Validation
     const retCode = ret.CODE || ret.STATUS;
 
     // Validate RETURNTYPE
-    if (retType && typeof retType !== 'string') {
-      result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}].RETURNTYPE must be a string`);
+    if ('RETURNTYPE' in ret || 'type' in ret || 'TYPE' in ret) {
+      if (typeof retType !== 'string') {
+        result.isValid = false;
+        result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}].RETURNTYPE must be a string`);
+      }
     }
 
     // Validate RETURNNAME/RETURNVAR
-    if (retName && typeof retName !== 'string') {
-      result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}].RETURNNAME must be a string`);
+    if ('RETURNNAME' in ret || 'RETURNVAR' in ret) {
+      if (typeof retName !== 'string') {
+        result.isValid = false;
+        result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}].RETURNNAME must be a string`);
+      }
     }
 
     // Validate CODE/STATUS
-    if (retCode && typeof retCode !== 'string' && typeof retCode !== 'number') {
-      result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}].CODE must be a string or number`);
+    if ('CODE' in ret || 'STATUS' in ret) {
+      if (typeof retCode !== 'string' && typeof retCode !== 'number') {
+        result.isValid = false;
+        result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}].CODE must be a string or number`);
+      }
     }
   }
 }
