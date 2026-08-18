@@ -96,14 +96,30 @@ export function validateOpenApiV3Spec(spec: any): void {
     );
   }
 
-  if (
-    (!spec.paths || typeof spec.paths !== 'object' || Array.isArray(spec.paths)) &&
-    (!spec.webhooks || typeof spec.webhooks !== 'object' || Array.isArray(spec.webhooks))
-  ) {
+  const hasPaths = 'paths' in spec;
+  const hasWebhooks = 'webhooks' in spec;
+
+  if (!hasPaths && !hasWebhooks) {
     throw createConverterError(
-      "Invalid OpenAPI v3 specification: missing or invalid 'paths' or 'webhooks' field",
+      "Invalid OpenAPI v3 specification: missing 'paths' or 'webhooks' field",
       'MISSING_PATHS',
-      { pathsType: typeof spec.paths, webhooksType: typeof spec.webhooks, specKeys: Object.keys(spec) }
+      { specKeys: Object.keys(spec) }
+    );
+  }
+
+  if (hasPaths && (typeof spec.paths !== 'object' || spec.paths === null || Array.isArray(spec.paths))) {
+    throw createConverterError(
+      "Invalid OpenAPI v3 specification: 'paths' must be an object",
+      'INVALID_PATHS_TYPE',
+      { pathsType: typeof spec.paths }
+    );
+  }
+
+  if (hasWebhooks && (typeof spec.webhooks !== 'object' || spec.webhooks === null || Array.isArray(spec.webhooks))) {
+    throw createConverterError(
+      "Invalid OpenAPI v3 specification: 'webhooks' must be an object",
+      'INVALID_WEBHOOKS_TYPE',
+      { webhooksType: typeof spec.webhooks }
     );
   }
 }

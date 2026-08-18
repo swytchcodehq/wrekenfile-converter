@@ -501,9 +501,9 @@ function validateV2InputParam(paramProps: any, paramName: string, i: number, int
         return;
     }
 
-    const typeVal = paramProps.type || paramProps.TYPE;
-    const reqVal = paramProps.required || paramProps.REQUIRED;
-    const locVal = paramProps.location || paramProps.LOCATION;
+    const typeVal = paramProps.type ?? paramProps.TYPE;
+    const reqVal = paramProps.required ?? paramProps.REQUIRED;
+    const locVal = paramProps.location ?? paramProps.LOCATION;
 
     if (!typeVal) {
         result.isValid = false;
@@ -570,9 +570,9 @@ function validateReturns(returns: any, interfaceName: string, result: Validation
       result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}] missing required field: CODE or STATUS`);
     }
 
-    const retType = ret.RETURNTYPE || ret.type || ret.TYPE;
-    const retName = ret.RETURNNAME || ret.RETURNVAR;
-    const retCode = ret.CODE || ret.STATUS;
+    const retType = ret.RETURNTYPE ?? ret.type ?? ret.TYPE;
+    const retName = ret.RETURNNAME ?? ret.RETURNVAR;
+    const retCode = ret.CODE ?? ret.STATUS;
 
     // Validate RETURNTYPE
     if ('RETURNTYPE' in ret || 'type' in ret || 'TYPE' in ret) {

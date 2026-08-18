@@ -54,7 +54,8 @@ describe('validateOpenApiV3Spec', () => {
     ).toThrow(/paths/i);
   });
 
-  it('rejects array values for paths and webhooks', () => {
+  it('rejects array values for paths and webhooks even when the other is valid', () => {
+    // Both missing or invalid
     expect(() =>
       validateOpenApiV3Spec({
         openapi: '3.0.0',
@@ -69,7 +70,27 @@ describe('validateOpenApiV3Spec', () => {
         info: { title: 'Test', version: '1.0' },
         webhooks: [],
       })
+    ).toThrow(/webhooks/i);
+
+    // Invalid paths with valid webhooks
+    expect(() =>
+      validateOpenApiV3Spec({
+        openapi: '3.1.0',
+        info: { title: 'Test', version: '1.0' },
+        paths: [],
+        webhooks: { '/test': {} },
+      })
     ).toThrow(/paths/i);
+
+    // Invalid webhooks with valid paths
+    expect(() =>
+      validateOpenApiV3Spec({
+        openapi: '3.1.0',
+        info: { title: 'Test', version: '1.0' },
+        paths: { '/test': {} },
+        webhooks: [],
+      })
+    ).toThrow(/webhooks/i);
   });
 });
 

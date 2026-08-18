@@ -122,22 +122,31 @@ export function filterStructsByUsage(wrekenfile: any): void {
       if (Array.isArray(methodData.INPUTS)) {
         for (const input of methodData.INPUTS) {
           if (input && typeof input === 'object') {
-            const key = Object.keys(input)[0];
-            if (key && input[key].TYPE) {
-              input[key].TYPE = replaceDangling(input[key].TYPE);
+            for (const [key, value] of Object.entries<any>(input)) {
+              if (typeof value === 'string') {
+                input[key] = replaceDangling(value);
+              } else if (value && typeof value === 'object' && value.TYPE) {
+                value.TYPE = replaceDangling(value.TYPE);
+              }
             }
           }
         }
       }
       if (Array.isArray(methodData.RETURNS)) {
         for (const ret of methodData.RETURNS) {
-          if (ret.TYPE) ret.TYPE = replaceDangling(ret.TYPE);
+          if (ret.RETURNTYPE) ret.RETURNTYPE = replaceDangling(ret.RETURNTYPE);
         }
       }
       if (Array.isArray(methodData.ERRORS)) {
         for (const err of methodData.ERRORS) {
           if (err.TYPE) err.TYPE = replaceDangling(err.TYPE);
         }
+      }
+      if (methodData.HTTP && methodData.HTTP.BODY && methodData.HTTP.BODY.TYPE) {
+        methodData.HTTP.BODY.TYPE = replaceDangling(methodData.HTTP.BODY.TYPE);
+      }
+      if (methodData.ASYNC && methodData.ASYNC.RESULT && methodData.ASYNC.RESULT.TYPE) {
+        methodData.ASYNC.RESULT.TYPE = replaceDangling(methodData.ASYNC.RESULT.TYPE);
       }
     }
   }

@@ -136,7 +136,7 @@ export function extractRefName(ref: string): string | undefined {
     .filter(p => p !== '#' && p !== 'components' && p !== 'schemas' && p !== 'definitions')
     .map(p => {
       try {
-        return decodeURIComponent(p.replace(/~1/g, '/').replace(/~0/g, '~'));
+        return decodeURIComponent(p).replace(/~1/g, '/').replace(/~0/g, '~');
       } catch {
         return p.replace(/~1/g, '/').replace(/~0/g, '~');
       }
