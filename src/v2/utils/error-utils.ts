@@ -2,11 +2,19 @@
  * Error handling and logging utilities for v2 converters
  */
 
-export interface ConverterError {
-  message: string;
+export class ConverterError extends Error {
   code: string;
   context?: Record<string, any>;
   cause?: Error;
+
+  constructor(message: string, code: string, context?: Record<string, any>, cause?: Error) {
+    super(message);
+    this.name = 'ConverterError';
+    this.code = code;
+    this.context = context;
+    this.cause = cause;
+    Object.setPrototypeOf(this, ConverterError.prototype);
+  }
 }
 
 /**
@@ -15,15 +23,7 @@ export interface ConverterError {
 export function logError(error: ConverterError | Error, context?: Record<string, any>): void {
   const timestamp = new Date().toISOString();
   
-  if (error instanceof Error) {
-    console.error(`[${timestamp}] ERROR:`, error.message);
-    if (context) {
-      console.error('  Context:', JSON.stringify(context, null, 2));
-    }
-    if (error.stack) {
-      console.error('  Stack:', error.stack);
-    }
-  } else {
+  if (error instanceof ConverterError) {
     console.error(`[${timestamp}] ERROR [${error.code}]:`, error.message);
     if (error.context) {
       console.error('  Context:', JSON.stringify(error.context, null, 2));
@@ -37,6 +37,19 @@ export function logError(error: ConverterError | Error, context?: Record<string,
         console.error('  Cause Stack:', error.cause.stack);
       }
     }
+    if (error.stack) {
+      console.error('  Stack:', error.stack);
+    }
+  } else if (error instanceof Error) {
+    console.error(`[${timestamp}] ERROR:`, error.message);
+    if (context) {
+      console.error('  Context:', JSON.stringify(context, null, 2));
+    }
+    if (error.stack) {
+      console.error('  Stack:', error.stack);
+    }
+  } else {
+    console.error(`[${timestamp}] UNKNOWN ERROR:`, error);
   }
 }
 
@@ -49,7 +62,7 @@ export function createConverterError(
   context?: Record<string, any>,
   cause?: Error
 ): ConverterError {
-  return { message, code, context, cause };
+  return new ConverterError(message, code, context, cause);
 }
 
 /**

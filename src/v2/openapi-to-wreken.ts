@@ -1,5 +1,5 @@
 // openapi-to-wrekenfile-v2.ts
-// Converts OpenAPI v3 specifications to Wrekenfile v2.0.1 format
+// Converts OpenAPI v3 specifications to Wrekenfile v2.0.2 format
 
 
 
@@ -43,6 +43,7 @@ import {
   getErrorStructName,
   isStructSchema,
   getSingleAllOfRef,
+  applyConstraints,
 } from './utils/schema-utils';
 
 
@@ -193,27 +194,23 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver, operation
     
     // v2.0.2: All INPUTS must have LOCATION field
     // Build input parameter with LOCATION
-    if (isRequired && !hasDefault) {
-      // Simple form: - paramName: TYPE (but we need LOCATION, so use extended form)
-      const inputParam: any = {};
-      inputParam[paramName] = {
-        TYPE: type,
-        LOCATION: paramIn,
-      };
-      inputParams.push(inputParam);
-    } else {
-      // Extended form: - paramName: { TYPE: ..., REQUIRED: ..., DEFAULT: ..., LOCATION: ... }
-      const inputParam: any = {};
-      inputParam[paramName] = {
-        TYPE: type,
-        REQUIRED: isRequired,
-        LOCATION: paramIn,
-      };
-      if (hasDefault) {
-        inputParam[paramName].DEFAULT = paramSchema.default;
-      }
-      inputParams.push(inputParam);
+    const inputParam: any = {};
+    inputParam[paramName] = {
+      TYPE: type,
+      REQUIRED: isRequired,
+      LOCATION: paramIn,
+    };
+    if (hasDefault) {
+      inputParam[paramName].DEFAULT = paramSchema.default;
     }
+    if (paramSchema) {
+      applyConstraints(inputParam[paramName], paramSchema);
+    }
+    if (param.style) inputParam[paramName].STYLE = param.style;
+    if (param.explode !== undefined) inputParam[paramName].EXPLODE = param.explode;
+    if (param.deprecated === true) inputParam[paramName].DEPRECATED = true;
+    if (param.example !== undefined) inputParam[paramName].EXAMPLE = param.example;
+    inputParams.push(inputParam);
   }
   
   return inputParams;
@@ -226,13 +223,25 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     return inputParams;
   }
   // Pick by priority (JSON, then multipart, then urlencoded) rather than
-  // declaration order — a spec listing e.g. "application/xml" before
-  // "application/json" in `content` must not cause the JSON body to be
-  // silently skipped.
-  const contentType = [CONTENT_TYPE_JSON, 'multipart/form-data', 'application/x-www-form-urlencoded']
-    .find((ct) => requestBody.content[ct]?.schema);
-  if (contentType === CONTENT_TYPE_JSON && requestBody.content[contentType]?.schema) {
-    const bodySchema = requestBody.content[contentType].schema;
+  // declaration order. If none of the structured types have a schema,
+  // fallback to the first available content type (e.g. application/octet-stream, text/plain)
+  const contentTypes = Object.keys(requestBody.content);
+  let contentType = [CONTENT_TYPE_JSON, 'multipart/form-data', 'application/x-www-form-urlencoded']
+    .find((ct) => contentTypes.includes(ct) && requestBody.content[ct]?.schema);
+    
+  if (!contentType && contentTypes.length > 0) {
+    // If no preferred type with a schema is found, pick the first available content type
+    // even if it lacks a schema (e.g., raw binary uploads)
+    contentType = contentTypes[0];
+  }
+
+  if (!contentType) {
+    return inputParams;
+  }
+
+  if (contentType === CONTENT_TYPE_JSON || (!['multipart/form-data', 'application/x-www-form-urlencoded'].includes(contentType))) {
+    const bodyObj = requestBody.content[contentType];
+    const bodySchema = bodyObj?.schema;
     let type: string;
     if (bodySchema && (bodySchema.$ref || getSingleAllOfRef(bodySchema))) {
       type = getTypeFromSchema(bodySchema, resolver);
@@ -255,29 +264,25 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     
     const isRequired = requestBody.required === true;
     // v2.0.2: All INPUTS must have LOCATION field
-    if (isRequired) {
-      // Simple form with LOCATION
-      const inputParam: any = {};
-      inputParam.body = {
-        TYPE: type,
-        LOCATION: 'body',
-      };
-      inputParams.push(inputParam);
-    } else {
-      // Extended form with LOCATION
-      const inputParam: any = {};
-      inputParam.body = {
-        TYPE: type,
-        REQUIRED: false,
-        LOCATION: 'body',
-      };
-      inputParams.push(inputParam);
+    const inputParam: any = {};
+    inputParam.body = {
+      TYPE: type,
+      REQUIRED: isRequired,
+      LOCATION: 'body',
+      CONTENT_TYPE: contentType,
+    };
+    if (bodySchema) {
+      applyConstraints(inputParam.body, bodySchema);
     }
+    inputParams.push(inputParam);
   } else if (contentType === 'multipart/form-data' && requestBody.content[contentType]?.schema) {
     const bodySchema = requestBody.content[contentType].schema;
     if (bodySchema && bodySchema.properties) {
       for (const [key, prop] of Object.entries<any>(bodySchema.properties)) {
-        let type = prop && prop.format === 'binary' ? 'STRING' : getTypeFromSchema(prop, resolver);
+        let type = prop && prop.format === 'binary' ? 'BINARY' : getTypeFromSchema(prop, resolver);
+        if (prop && prop.type === 'array' && prop.items && prop.items.format === 'binary') {
+          type = '[]BINARY';
+        }
         if (type === 'OBJECT' && !prop.$ref) {
            const requestStructName = generateStructName(operationId, method, path, 'Request');
            type = `STRUCT(${sanitizeName(requestStructName + '_' + key)})`;
@@ -293,22 +298,16 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
         
         const inputParam: any = {};
         // v2.0.2: All INPUTS must have LOCATION field
-        if (required && !hasDefault) {
-          // Simple form with LOCATION
-          inputParam[key] = {
-            TYPE: type,
-            LOCATION: 'body',
-          };
-        } else {
-          // Extended form with LOCATION
-          inputParam[key] = {
-            TYPE: type,
-            REQUIRED: required,
-            LOCATION: 'body',
-          };
-          if (hasDefault) {
-            inputParam[key].DEFAULT = prop.default;
-          }
+        inputParam[key] = {
+          TYPE: type,
+          REQUIRED: required,
+          LOCATION: 'body',
+        };
+        if (hasDefault) {
+          inputParam[key].DEFAULT = prop.default;
+        }
+        if (prop) {
+          applyConstraints(inputParam[key], prop);
         }
         inputParams.push(inputParam);
       }
@@ -334,22 +333,16 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
         
         const inputParam: any = {};
         // v2.0.2: All INPUTS must have LOCATION field
-        if (required && !hasDefault) {
-          // Simple form with LOCATION
-          inputParam[key] = {
-            TYPE: type,
-            LOCATION: 'body',
-          };
-        } else {
-          // Extended form with LOCATION
-          inputParam[key] = {
-            TYPE: type,
-            REQUIRED: required,
-            LOCATION: 'body',
-          };
-          if (hasDefault) {
-            inputParam[key].DEFAULT = prop.default;
-          }
+        inputParam[key] = {
+          TYPE: type,
+          REQUIRED: required,
+          LOCATION: 'body',
+        };
+        if (hasDefault) {
+          inputParam[key].DEFAULT = prop.default;
+        }
+        if (prop) {
+          applyConstraints(inputParam[key], prop);
         }
         inputParams.push(inputParam);
       }
@@ -596,6 +589,11 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       if (op.description) {
         methodDef.DESC = op.description;
       }
+      
+      // Add DEPRECATED if operation is deprecated
+      if (op.deprecated === true) {
+        methodDef.DEPRECATED = true;
+      }
 
       // HTTP section (mandatory for API methods)
       methodDef.HTTP = {
@@ -616,6 +614,37 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
 
       if (bodyType !== BODYTYPE_RAW) {
         methodDef.HTTP.BODYTYPE = bodyType;
+      }
+
+      // Add SECURITY metadata
+      const security = op.security !== undefined ? op.security : spec.security;
+      if (security && Array.isArray(security)) {
+        if (security.length === 0) {
+          methodDef.SECURITY = [];
+        } else {
+          methodDef.SECURITY = security.map((req: any) => {
+            const enrichedReq: any = {};
+            for (const [schemeName, scopes] of Object.entries(req)) {
+              const scheme = spec.components?.securitySchemes?.[schemeName];
+              if (scheme) {
+                enrichedReq[schemeName] = {
+                  type: scheme.type,
+                };
+                if (scheme.scheme) enrichedReq[schemeName].scheme = scheme.scheme;
+                if (scheme.in) enrichedReq[schemeName].in = scheme.in;
+                if (scheme.name) enrichedReq[schemeName].name = scheme.name;
+                
+                const scopesArr = scopes as string[];
+                if (scopesArr && scopesArr.length > 0) {
+                  enrichedReq[schemeName].scopes = scopesArr;
+                }
+              } else {
+                enrichedReq[schemeName] = { scopes };
+              }
+            }
+            return enrichedReq;
+          });
+        }
       }
 
       // Determine Execution Mode

@@ -1,5 +1,5 @@
 // postman-to-wrekenfile.ts
-// Converts Postman collections to Wrekenfile v2.0.1 format
+// Converts Postman collections to Wrekenfile v2.0.2 format
 import * as fs from 'fs';
 import { generateYamlString } from './utils/yaml-utils';
 import { 

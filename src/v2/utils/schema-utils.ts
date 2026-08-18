@@ -7,6 +7,28 @@ import { mapOpenApiType as mapType } from './type-utils';
  * Fixes Bug #2 by ensuring extractMethods and extractStructs use the exact same logic.
  */
 
+export function applyConstraints(target: any, schema: any): void {
+  if (!schema || typeof schema !== 'object') return;
+  if (schema.enum !== undefined) target.ENUM = schema.enum;
+  if (schema.format !== undefined) target.FORMAT = schema.format;
+  if (schema.minimum !== undefined) target.MINIMUM = schema.minimum;
+  if (schema.maximum !== undefined) target.MAXIMUM = schema.maximum;
+  if (schema.exclusiveMinimum !== undefined) target.EXCLUSIVE_MINIMUM = schema.exclusiveMinimum;
+  if (schema.exclusiveMaximum !== undefined) target.EXCLUSIVE_MAXIMUM = schema.exclusiveMaximum;
+  if (schema.multipleOf !== undefined) target.MULTIPLE_OF = schema.multipleOf;
+  if (schema.minLength !== undefined) target.MIN_LENGTH = schema.minLength;
+  if (schema.maxLength !== undefined) target.MAX_LENGTH = schema.maxLength;
+  if (schema.pattern !== undefined) target.PATTERN = schema.pattern;
+  if (schema.minItems !== undefined) target.MIN_ITEMS = schema.minItems;
+  if (schema.maxItems !== undefined) target.MAX_ITEMS = schema.maxItems;
+  if (schema.uniqueItems === true) target.UNIQUE_ITEMS = true;
+  if (schema.nullable === true) target.NULLABLE = true;
+  if (schema.readOnly === true) target.READ_ONLY = true;
+  if (schema.writeOnly === true) target.WRITE_ONLY = true;
+  if (schema.deprecated === true) target.DEPRECATED = true;
+  if (schema.default !== undefined) target.DEFAULT = schema.default;
+  if (schema.example !== undefined) target.EXAMPLE = schema.example;
+}
 
 export function isStructSchema(schema: any): boolean {
   if (!schema || typeof schema !== 'object') return false;
@@ -185,13 +207,30 @@ export function parseSchema(name: string, schema: any, resolver: RefResolver, de
   
   if (schema.oneOf || schema.anyOf) {
     const variants = schema.oneOf || schema.anyOf;
+    const compositionType = schema.oneOf ? 'ONE_OF' : 'ANY_OF';
     const fields: any[] = [];
+    // Emit the composition keyword so the AI knows whether to pick exactly
+    // one variant (ONE_OF) or potentially combine them (ANY_OF)
+    fields.push({
+      name: '_COMPOSITION',
+      TYPE: compositionType,
+      REQUIRED: false,
+    });
     if (schema.discriminator?.propertyName) {
-      fields.push({
+      const discField: any = {
         name: schema.discriminator.propertyName,
         TYPE: 'STRING',
         REQUIRED: true,
-      });
+      };
+      // Preserve the discriminator mapping if present
+      if (schema.discriminator.mapping && typeof schema.discriminator.mapping === 'object') {
+        discField.MAPPING = schema.discriminator.mapping;
+      }
+      // Preserve enum of allowed discriminator values from the property schema
+      if (schema.properties?.[schema.discriminator.propertyName]?.enum) {
+        discField.ENUM = schema.properties[schema.discriminator.propertyName].enum;
+      }
+      fields.push(discField);
     }
     for (let i = 0; i < variants.length; i++) {
       const variant = variants[i];
@@ -204,11 +243,13 @@ export function parseSchema(name: string, schema: any, resolver: RefResolver, de
           REQUIRED: false,
         });
       } else if (variant && typeof variant === 'object' && variant.type && variant.type !== 'object') {
-        fields.push({
+        const variantField: any = {
           name: `variant_${i}`,
           TYPE: mapType(variant.type, variant.format),
           REQUIRED: false,
-        });
+        };
+        applyConstraints(variantField, variant);
+        fields.push(variantField);
       } else {
         let variantType = getTypeFromSchema(variant, resolver) || 'ANY';
         if (variantType === 'OBJECT') {
@@ -276,6 +317,7 @@ export function parseSchema(name: string, schema: any, resolver: RefResolver, de
         TYPE: type,
         REQUIRED: required,
       };
+      applyConstraints(field, prop);
       if (prop && typeof prop === 'object' && prop.description) {
         field.comment = prop.description;
       }

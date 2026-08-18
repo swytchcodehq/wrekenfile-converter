@@ -1,5 +1,5 @@
 // openapi-v2-swagger-to-wrekenfile-v2.ts
-// Converts OpenAPI v2 (Swagger) specifications to Wrekenfile v2.0.1 format
+// Converts OpenAPI v2 (Swagger) specifications to Wrekenfile v2.0.2 format
 
 
 import { load } from 'js-yaml';
@@ -36,6 +36,7 @@ import {
   getErrorStructName,
   isStructSchema,
   getSingleAllOfRef,
+  applyConstraints,
 } from './utils/schema-utils';
 
 
@@ -177,27 +178,28 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver): any[] {
       
       // v2.0.2: All INPUTS must have LOCATION field
       // Build input parameter with LOCATION
-      if (isRequired && !hasDefault) {
-        // Simple form with LOCATION
-        const inputParam: any = {};
-        inputParam[paramName] = {
-          TYPE: type,
-          LOCATION: paramIn,
-        };
-        inputParams.push(inputParam);
-      } else {
-        // Extended form with LOCATION
-        const inputParam: any = {};
-        inputParam[paramName] = {
-          TYPE: type,
-          REQUIRED: isRequired,
-          LOCATION: paramIn,
-        };
-        if (hasDefault) {
-          inputParam[paramName].DEFAULT = paramSchema.default;
-        }
-        inputParams.push(inputParam);
+      const inputParam: any = {};
+      inputParam[paramName] = {
+        TYPE: type,
+        REQUIRED: isRequired,
+        LOCATION: paramIn,
+      };
+      if (hasDefault) {
+        inputParam[paramName].DEFAULT = paramSchema.default;
       }
+      if (paramSchema && Object.keys(paramSchema).length > 0) {
+        applyConstraints(inputParam[paramName], paramSchema);
+      } else if (param) {
+        applyConstraints(inputParam[paramName], param);
+      }
+      if (param && typeof param === 'object') {
+        const styleVal = param.style || param.collectionFormat;
+        if (styleVal) inputParam[paramName].STYLE = styleVal;
+        if (param.explode !== undefined) inputParam[paramName].EXPLODE = param.explode;
+        if (param.deprecated === true) inputParam[paramName].DEPRECATED = true;
+        if (param.example !== undefined) inputParam[paramName].EXAMPLE = param.example;
+      }
+      inputParams.push(inputParam);
     }
   }
   
@@ -231,53 +233,39 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     const isRequired = bodyParam && typeof bodyParam === 'object' ? bodyParam.required === true : false;
     
     // v2.0.2: All INPUTS must have LOCATION field
-    if (isRequired) {
-      // Simple form with LOCATION
-      const inputParam: any = {};
-      inputParam.body = {
-        TYPE: type,
-        LOCATION: 'body',
-      };
-      inputParams.push(inputParam);
-    } else {
-      // Extended form with LOCATION
-      const inputParam: any = {};
-      inputParam.body = {
-        TYPE: type,
-        REQUIRED: false,
-        LOCATION: 'body',
-      };
-      inputParams.push(inputParam);
+    const inputParam: any = {};
+    inputParam.body = {
+      TYPE: type,
+      REQUIRED: isRequired,
+      LOCATION: 'body',
+    };
+    if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema) {
+      applyConstraints(inputParam.body, bodyParam.schema);
     }
+    inputParams.push(inputParam);
   }
   
   // Handle formData for multipart/form-data (OpenAPI v2)
   if (op.parameters) {
     for (const param of op.parameters) {
       if (param && typeof param === 'object' && param.in === 'formData') {
-        const type = param.type === 'file' ? 'STRING' : getTypeFromSchema({ type: param.type, format: param.format, items: param.items }, resolver);
+        const type = param.type === 'file' ? 'BINARY' : getTypeFromSchema({ type: param.type, format: param.format, items: param.items }, resolver);
         // FormData parameters default to false (optional) if not specified
         const isRequired = param.required === true;
         const hasDefault = param.default !== undefined;
         
         const inputParam: any = {};
         // v2.0.2: All INPUTS must have LOCATION field
-        if (isRequired && !hasDefault) {
-          // Simple form with LOCATION
-          inputParam[param.name] = {
-            TYPE: type,
-            LOCATION: 'body',
-          };
-        } else {
-          // Extended form with LOCATION
-          inputParam[param.name] = {
-            TYPE: type,
-            REQUIRED: isRequired,
-            LOCATION: 'body',
-          };
-          if (hasDefault) {
-            inputParam[param.name].DEFAULT = param.default;
-          }
+        inputParam[param.name] = {
+          TYPE: type,
+          REQUIRED: isRequired,
+          LOCATION: 'body',
+        };
+        if (hasDefault) {
+          inputParam[param.name].DEFAULT = param.default;
+        }
+        if (param) {
+          applyConstraints(inputParam[param.name], param);
         }
         inputParams.push(inputParam);
       }
@@ -495,6 +483,11 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       if (op.description) {
         methodDef.DESC = op.description;
       }
+      
+      // Add DEPRECATED if operation is deprecated
+      if (op.deprecated === true) {
+        methodDef.DEPRECATED = true;
+      }
 
       // HTTP section (mandatory for API methods)
       methodDef.HTTP = {
@@ -519,6 +512,37 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
 
       // Determine Execution Mode
       let executionMode = EXECUTION_MODE_SYNC;
+
+      // Add SECURITY metadata
+      const security = op.security !== undefined ? op.security : spec.security;
+      if (security && Array.isArray(security)) {
+        if (security.length === 0) {
+          methodDef.SECURITY = [];
+        } else {
+          methodDef.SECURITY = security.map((req: any) => {
+            const enrichedReq: any = {};
+            for (const [schemeName, scopes] of Object.entries(req)) {
+              const scheme = spec.securityDefinitions?.[schemeName];
+              if (scheme) {
+                enrichedReq[schemeName] = {
+                  type: scheme.type,
+                };
+                if (scheme.scheme) enrichedReq[schemeName].scheme = scheme.scheme;
+                if (scheme.in) enrichedReq[schemeName].in = scheme.in;
+                if (scheme.name) enrichedReq[schemeName].name = scheme.name;
+                
+                const scopesArr = scopes as string[];
+                if (scopesArr && scopesArr.length > 0) {
+                  enrichedReq[schemeName].scopes = scopesArr;
+                }
+              } else {
+                enrichedReq[schemeName] = { scopes };
+              }
+            }
+            return enrichedReq;
+          });
+        }
+      }
       if (op.responses && op.responses['202']) {
         executionMode = EXECUTION_MODE_ASYNC;
       }
