@@ -120,7 +120,7 @@ export function extractRefName(ref: string): string | undefined {
     .map(p => {
       try {
         return decodeURIComponent(p.replace(/~1/g, '/').replace(/~0/g, '~'));
-      } catch (e) {
+      } catch (_e) {
         return p.replace(/~1/g, '/').replace(/~0/g, '~');
       }
     });
