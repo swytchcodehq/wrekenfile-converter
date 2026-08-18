@@ -324,10 +324,11 @@ export function generateStructName(operationId: string, method: string, path: st
 
 export function getErrorStructName(rawResponse: any, op: any, code: string): string {
   if (rawResponse && rawResponse.$ref && typeof rawResponse.$ref === 'string') {
-    const key = extractRefName(rawResponse.$ref) || '';
-    if (/^[0-9]+$/.test(key)) {
-      return `Error${key}`;
+    const rawTail = rawResponse.$ref.split('/').pop() || '';
+    if (/^[0-9]+$/.test(rawTail)) {
+      return `Error${rawTail}`;
     }
+    const key = extractRefName(rawResponse.$ref) || '';
     if (key) {
       return `Response_${key}`;
     }
