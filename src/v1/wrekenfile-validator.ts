@@ -240,14 +240,21 @@ function validateVersion(data: WrekenfileStructure, result: ValidationResult): v
   }
 }
 
-function validateInitSection(data: WrekenfileStructure, result: ValidationResult): void {
-  if (!data.INIT) {
-    result.warnings.push('Missing INIT section (optional but recommended)');
+function validateInitSection(data: any, result: ValidationResult): void {
+  if (!data.INIT && !data.DEFAULTS) {
+    result.warnings.push('Missing INIT or DEFAULTS section (optional but recommended)');
+    return;
+  }
+
+  // If using V2 DEFAULTS format directly at root
+  if (data.DEFAULTS) {
+    if (typeof data.DEFAULTS !== 'object' || Array.isArray(data.DEFAULTS)) {
+      result.errors.push('DEFAULTS must be an object');
+    }
     return;
   }
 
   if (typeof data.INIT !== 'object') {
-    result.isValid = false;
     result.errors.push('INIT must be an object');
     return;
   }
@@ -286,27 +293,30 @@ function validateInitSection(data: WrekenfileStructure, result: ValidationResult
   }
 }
 
-function validateInterfacesSection(data: WrekenfileStructure, result: ValidationResult): void {
-  if (!data.INTERFACES) {
+function validateInterfacesSection(data: any, result: ValidationResult): void {
+  const interfacesSection = data.INTERFACES || data.METHODS;
+  const sectionName = data.INTERFACES ? 'INTERFACES' : 'METHODS';
+
+  if (!interfacesSection) {
     result.isValid = false;
-    result.errors.push('Missing required INTERFACES section');
+    result.errors.push('Missing required INTERFACES or METHODS section');
     return;
   }
 
-  if (typeof data.INTERFACES !== 'object') {
+  if (typeof interfacesSection !== 'object') {
     result.isValid = false;
-    result.errors.push('INTERFACES must be an object');
+    result.errors.push(`${sectionName} must be an object`);
     return;
   }
 
-  const interfaces = Object.keys(data.INTERFACES);
+  const interfaces = Object.keys(interfacesSection);
   if (interfaces.length === 0) {
     result.warnings.push('INTERFACES section is empty');
     return;
   }
 
   for (const interfaceName of interfaces) {
-    validateInterface(data.INTERFACES[interfaceName], interfaceName, result);
+    validateInterface(interfacesSection[interfaceName], interfaceName, result);
   }
 }
 
@@ -317,27 +327,30 @@ function validateInterface(interfaceData: any, interfaceName: string, result: Va
     return;
   }
 
-  // Required fields for interfaces
-  const requiredFields = ['DESC', 'ENDPOINT', 'VISIBILITY', 'HTTP', 'INPUTS', 'RETURNS'];
+  // Required fields for interfaces (V2 uses SUMMARY/DESC and HTTP)
+  const hasDesc = 'DESC' in interfaceData || 'SUMMARY' in interfaceData;
+  const hasHttp = 'HTTP' in interfaceData;
   
-  for (const field of requiredFields) {
-    if (!(field in interfaceData)) {
-      result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}' missing required field: ${field}`);
-    }
+  if (!hasDesc) {
+    result.isValid = false;
+    result.errors.push(`Interface '${interfaceName}' missing required field: DESC or SUMMARY`);
+  }
+  if (!hasHttp) {
+    result.isValid = false;
+    result.errors.push(`Interface '${interfaceName}' missing required field: HTTP`);
   }
 
-  // Validate DESC
+  // Validate DESC / SUMMARY
   if (interfaceData.DESC && typeof interfaceData.DESC !== 'string') {
     result.isValid = false;
     result.errors.push(`Interface '${interfaceName}'.DESC must be a string`);
   }
-
-  // Validate ENDPOINT
-  if (interfaceData.ENDPOINT && typeof interfaceData.ENDPOINT !== 'string') {
+  if (interfaceData.SUMMARY && typeof interfaceData.SUMMARY !== 'string') {
     result.isValid = false;
-    result.errors.push(`Interface '${interfaceName}'.ENDPOINT must be a string`);
+    result.errors.push(`Interface '${interfaceName}'.SUMMARY must be a string`);
   }
+
+  // ENDPOINT and VISIBILITY are optional in V2 (ENDPOINT moved to HTTP)
 
   // Validate VISIBILITY
   if (interfaceData.VISIBILITY) {
@@ -371,14 +384,17 @@ function validateHttpSection(httpData: any, interfaceName: string, result: Valid
     return;
   }
 
-  // Required HTTP fields
-  const requiredHttpFields = ['METHOD', 'HEADERS', 'BODYTYPE'];
+  // Required HTTP fields (V2 uses METHOD and ENDPOINT)
+  const hasMethod = 'METHOD' in httpData;
+  const hasEndpoint = 'ENDPOINT' in httpData;
   
-  for (const field of requiredHttpFields) {
-    if (!(field in httpData)) {
-      result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}'.HTTP missing required field: ${field}`);
-    }
+  if (!hasMethod) {
+    result.isValid = false;
+    result.errors.push(`Interface '${interfaceName}'.HTTP missing required field: METHOD`);
+  }
+  if (!hasEndpoint) {
+    result.isValid = false;
+    result.errors.push(`Interface '${interfaceName}'.HTTP missing required field: ENDPOINT`);
   }
 
   // Validate METHOD
@@ -390,24 +406,18 @@ function validateHttpSection(httpData: any, interfaceName: string, result: Valid
     }
   }
 
-  // Validate HEADERS
+  // Validate HEADERS (can be object in V2)
   if (httpData.HEADERS) {
-    if (!Array.isArray(httpData.HEADERS)) {
-      result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}'.HTTP.HEADERS must be an array`);
-    } else {
-      for (let i = 0; i < httpData.HEADERS.length; i++) {
-        const header = httpData.HEADERS[i];
-        if (typeof header !== 'object' || header === null) {
-          result.isValid = false;
-          result.errors.push(`Interface '${interfaceName}'.HTTP.HEADERS[${i}] must be an object`);
-          continue;
-        }
-
-        const headerKeys = Object.keys(header);
-        if (headerKeys.length !== 1) {
-          result.isValid = false;
-          result.errors.push(`Interface '${interfaceName}'.HTTP.HEADERS[${i}] must have exactly one key-value pair`);
+    if (typeof httpData.HEADERS !== 'object' || Array.isArray(httpData.HEADERS)) {
+      // It's allowed to be an array in V1, but in V2 it's usually an object.
+      // If it's an array, we'll just allow it for backward compatibility.
+      if (Array.isArray(httpData.HEADERS)) {
+        for (let i = 0; i < httpData.HEADERS.length; i++) {
+          const header = httpData.HEADERS[i];
+          if (typeof header !== 'object' || header === null) {
+            result.isValid = false;
+            result.errors.push(`Interface '${interfaceName}'.HTTP.HEADERS[${i}] must be an object`);
+          }
         }
       }
     }
@@ -415,10 +425,9 @@ function validateHttpSection(httpData: any, interfaceName: string, result: Valid
 
   // Validate BODYTYPE
   if (httpData.BODYTYPE) {
-    const validBodyTypes = ['RAW', 'JSON', 'FORM'];
-    if (!validBodyTypes.includes(httpData.BODYTYPE)) {
+    if (typeof httpData.BODYTYPE !== 'string') {
       result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}'.HTTP.BODYTYPE must be one of: ${validBodyTypes.join(', ')}`);
+      result.errors.push(`Interface '${interfaceName}'.HTTP.BODYTYPE must be a string`);
     }
   }
 }
@@ -438,44 +447,74 @@ function validateInputs(inputs: any, interfaceName: string, result: ValidationRe
       continue;
     }
 
-    // Required input fields
-    const requiredInputFields = ['name', 'type', 'required'];
-    
-    for (const field of requiredInputFields) {
-      if (!(field in input)) {
+    // Determine if V1 or V2 format
+    const keys = Object.keys(input);
+    const hasNameKey = 'name' in input;
+
+    if (hasNameKey) {
+        // V1 Format or V2 if the param name literally is "name" and it has a string value for name
+        if (typeof input.name === 'string') {
+            const hasType = 'type' in input || 'TYPE' in input;
+            const hasRequired = 'required' in input || 'REQUIRED' in input;
+            
+            if (!hasType) {
+                result.isValid = false;
+                result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}] missing required field: type/TYPE`);
+            }
+            if (!hasRequired) {
+                result.isValid = false;
+                result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}] missing required field: required/REQUIRED`);
+            }
+        } else {
+            // V2 format where the parameter name itself is literally "name"
+            validateV2InputParam(input.name, 'name', i, interfaceName, result);
+        }
+    } else if (keys.length === 1) {
+        // V2 Format with dynamic key
+        const paramName = keys[0];
+        const paramProps = input[paramName];
+        validateV2InputParam(paramProps, paramName, i, interfaceName, result);
+    } else {
         result.isValid = false;
-        result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}] missing required field: ${field}`);
-      }
-    }
-
-    // Validate name
-    if (input.name && typeof input.name !== 'string') {
-      result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].name must be a string`);
-    }
-
-    // Validate type
-    if (input.type && typeof input.type !== 'string') {
-      result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].type must be a string`);
-    }
-
-    // Validate required
-    if (input.required && typeof input.required !== 'string') {
-      result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].required must be a string`);
-    } else if (input.required && !['TRUE', 'FALSE'].includes(input.required)) {
-      result.warnings.push(`Interface '${interfaceName}'.INPUTS[${i}].required '${input.required}' should be 'TRUE' or 'FALSE'`);
-    }
-
-    // Validate location if present
-    if (input.location && typeof input.location !== 'string') {
-      result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].location must be a string`);
-    } else if (input.location && !['PATH', 'QUERY', 'HEADER', 'BODY'].includes(input.location)) {
-      result.warnings.push(`Interface '${interfaceName}'.INPUTS[${i}].location '${input.location}' should be one of: PATH, QUERY, HEADER, BODY`);
+        result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}] format not recognized`);
     }
   }
+}
+
+function validateV2InputParam(paramProps: any, paramName: string, i: number, interfaceName: string, result: ValidationResult): void {
+    if (typeof paramProps !== 'object' || paramProps === null) {
+        // In some cases it might just be the type string directly, but V2 usually wraps it
+        if (typeof paramProps === 'string') {
+            return; // Valid simple form
+        }
+        result.isValid = false;
+        result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].${paramName} must be an object or string`);
+        return;
+    }
+
+    const typeVal = paramProps.type || paramProps.TYPE;
+    const reqVal = paramProps.required || paramProps.REQUIRED;
+    const locVal = paramProps.location || paramProps.LOCATION;
+
+    if (!typeVal) {
+        result.isValid = false;
+        result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}] missing required field: type/TYPE`);
+    }
+    
+    if (typeVal && typeof typeVal !== 'string') {
+        result.isValid = false;
+        result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].type must be a string`);
+    }
+
+    if (reqVal !== undefined && typeof reqVal !== 'string' && typeof reqVal !== 'boolean') {
+        result.isValid = false;
+        result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].required must be a string or boolean`);
+    }
+
+    if (locVal && typeof locVal !== 'string') {
+        result.isValid = false;
+        result.errors.push(`Interface '${interfaceName}'.INPUTS[${i}].location must be a string`);
+    }
 }
 
 function validateReturns(returns: any, interfaceName: string, result: ValidationResult): void {
@@ -498,34 +537,44 @@ function validateReturns(returns: any, interfaceName: string, result: Validation
       continue;
     }
 
-    // Required return fields
-    const requiredReturnFields = ['RETURNTYPE', 'RETURNNAME', 'CODE'];
+    // Required return fields (V2 uses RETURNTYPE, RETURNVAR, STATUS)
+    const hasType = 'RETURNTYPE' in ret || 'type' in ret || 'TYPE' in ret;
+    const hasName = 'RETURNNAME' in ret || 'RETURNVAR' in ret;
+    const hasCode = 'CODE' in ret || 'STATUS' in ret;
     
-    for (const field of requiredReturnFields) {
-      if (!(field in ret)) {
-        result.isValid = false;
-        result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}] missing required field: ${field}`);
-      }
+    if (!hasType) {
+      result.isValid = false;
+      result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}] missing required field: RETURNTYPE`);
+    }
+    if (!hasName) {
+      result.isValid = false;
+      result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}] missing required field: RETURNNAME or RETURNVAR`);
+    }
+    if (!hasCode) {
+      result.isValid = false;
+      result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}] missing required field: CODE or STATUS`);
     }
 
+    const retType = ret.RETURNTYPE || ret.type || ret.TYPE;
+    const retName = ret.RETURNNAME || ret.RETURNVAR;
+    const retCode = ret.CODE || ret.STATUS;
+
     // Validate RETURNTYPE
-    if (ret.RETURNTYPE && typeof ret.RETURNTYPE !== 'string') {
+    if (retType && typeof retType !== 'string') {
       result.isValid = false;
       result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}].RETURNTYPE must be a string`);
     }
 
-    // Validate RETURNNAME
-    if (ret.RETURNNAME && typeof ret.RETURNNAME !== 'string') {
+    // Validate RETURNNAME/RETURNVAR
+    if (retName && typeof retName !== 'string') {
       result.isValid = false;
       result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}].RETURNNAME must be a string`);
     }
 
-    // Validate CODE
-    if (ret.CODE && typeof ret.CODE !== 'string') {
+    // Validate CODE/STATUS
+    if (retCode && typeof retCode !== 'string' && typeof retCode !== 'number') {
       result.isValid = false;
-      result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}].CODE must be a string`);
-    } else if (ret.CODE && !/^\d{3}$/.test(ret.CODE)) {
-      result.warnings.push(`Interface '${interfaceName}'.RETURNS[${i}].CODE '${ret.CODE}' may not be a valid HTTP status code`);
+      result.errors.push(`Interface '${interfaceName}'.RETURNS[${i}].CODE must be a string or number`);
     }
   }
 }
@@ -569,13 +618,20 @@ function validateStruct(structData: any, structName: string, result: ValidationR
     }
 
     // Required struct field properties
-    const requiredFieldProps = ['name', 'type', 'required'];
-    
-    for (const prop of requiredFieldProps) {
-      if (!(prop in field)) {
-        result.isValid = false;
-        result.errors.push(`Struct '${structName}'[${i}] missing required property: ${prop}`);
-      }
+    const hasType = 'type' in field || 'TYPE' in field;
+    const hasRequired = 'required' in field || 'REQUIRED' in field;
+
+    if (!('name' in field)) {
+      result.isValid = false;
+      result.errors.push(`Struct '${structName}'[${i}] missing required property: name`);
+    }
+    if (!hasType) {
+      result.isValid = false;
+      result.errors.push(`Struct '${structName}'[${i}] missing required property: type/TYPE`);
+    }
+    if (!hasRequired) {
+      result.isValid = false;
+      result.errors.push(`Struct '${structName}'[${i}] missing required property: required/REQUIRED`);
     }
 
     // Validate name
@@ -584,18 +640,27 @@ function validateStruct(structData: any, structName: string, result: ValidationR
       result.errors.push(`Struct '${structName}'[${i}].name must be a string`);
     }
 
+    const typeVal = field.type || field.TYPE;
+    const reqVal = field.required || field.REQUIRED;
+
     // Validate type
-    if (field.type && typeof field.type !== 'string') {
+    if (typeVal && typeof typeVal !== 'string') {
       result.isValid = false;
       result.errors.push(`Struct '${structName}'[${i}].type must be a string`);
     }
 
     // Validate required - be more flexible with actual values
-    if (field.required && typeof field.required !== 'string') {
-      result.isValid = false;
-      result.errors.push(`Struct '${structName}'[${i}].required must be a string`);
-    } else if (field.required && !['TRUE', 'FALSE', 'OPTIONAL'].includes(field.required)) {
-      result.warnings.push(`Struct '${structName}'[${i}].required '${field.required}' should be 'TRUE', 'FALSE', or 'OPTIONAL'`);
+    if (reqVal !== undefined) {
+      if (typeof reqVal === 'boolean') {
+        // OK
+      } else if (typeof reqVal === 'string') {
+        if (!['TRUE', 'FALSE', 'true', 'false', 'OPTIONAL'].includes(reqVal)) {
+          result.warnings.push(`Struct '${structName}'[${i}].required '${reqVal}' should be a boolean or 'TRUE', 'FALSE', 'OPTIONAL'`);
+        }
+      } else {
+        result.isValid = false;
+        result.errors.push(`Struct '${structName}'[${i}].required must be a boolean or string`);
+      }
     }
   }
 }

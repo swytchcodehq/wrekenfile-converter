@@ -171,7 +171,7 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver, operation
     }
 
     const paramName = param.name;
-    const paramSchema = param.schema || {};
+    const paramSchema = param.schema;
     
     let type = 'STRING';
     if (paramSchema) {
@@ -189,7 +189,7 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver, operation
     }
     
     const isRequired = param.required === true;
-    const hasDefault = paramSchema.default !== undefined;
+    const hasDefault = paramSchema?.default !== undefined;
     
     // v2.0.2: All INPUTS must have LOCATION field
     // Build input parameter with LOCATION
@@ -364,10 +364,15 @@ function extractResponses(op: any, operationId: string, method: string, path: st
   // Only include success responses (2xx) in RETURNS section
   // Error responses go in ERRORS section
   for (const [code, rawResponse] of Object.entries<any>(op.responses || {})) {
-    const statusCode = parseInt(code);
+    const normalizedCode = code.toLowerCase();
+    let statusCode = parseInt(code);
+    if (normalizedCode.endsWith('xx')) {
+      statusCode = parseInt(normalizedCode.charAt(0)) * 100;
+    }
 
     // Only process 2xx success responses
-    if (statusCode < 200 || statusCode >= 300) {
+    // 'default' becomes NaN, which fails the condition and will skip
+    if (isNaN(statusCode) || statusCode < 200 || statusCode >= 300) {
       continue;
     }
 
@@ -511,7 +516,7 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
       // v2.0.2: STATUS code is required in ERRORS
       const errorItem: any = {
         TYPE: errorType,
-        STATUS: statusCode || (code === 'default' ? 500 : parseInt(code)),
+        STATUS: !isNaN(statusCode) ? statusCode : (code === 'default' ? 500 : 400),
         WHEN: when,
       };
       errors.push(errorItem);

@@ -6,6 +6,8 @@ import { mapOpenApiType as mapType } from './type-utils';
  * Shared utility for determining if a schema should be emitted/extracted as a STRUCT.
  * Fixes Bug #2 by ensuring extractMethods and extractStructs use the exact same logic.
  */
+
+
 export function isStructSchema(schema: any): boolean {
   if (!schema || typeof schema !== 'object') return false;
   // If it has properties, it's definitely a struct (unless additionalProperties is the only thing, handled below)
@@ -171,14 +173,15 @@ export function getTypeFromSchema(schema: any, resolver: RefResolver): string {
   return 'ANY';
 }
 
-export function parseSchema(name: string, schema: any, resolver: RefResolver, depth = 0, visitedRefs = new Set<string>()): any[] {
+export function parseSchema(name: string, schema: any, resolver: RefResolver, depth = 0, visitedRefs = new Set<string>(), structs: Record<string, any[]> = {}): any[] {
+  if (!schema || typeof schema !== 'object') return [];
   if (depth > 10) return [];
   if (schema.$ref) {
     if (visitedRefs.has(schema.$ref)) return [];
     visitedRefs.add(schema.$ref);
-    return parseSchema(name, resolver.resolveRef(schema.$ref), resolver, depth + 1, visitedRefs);
+    return parseSchema(name, resolver.resolveRef(schema.$ref), resolver, depth + 1, visitedRefs, structs);
   }
-  if (schema.allOf) return schema.allOf.flatMap((s: any) => parseSchema(name, s, resolver, depth + 1, visitedRefs));
+  if (schema.allOf) return schema.allOf.flatMap((s: any) => parseSchema(name, s, resolver, depth + 1, visitedRefs, structs));
   
   if (schema.oneOf || schema.anyOf) {
     const variants = schema.oneOf || schema.anyOf;
@@ -207,9 +210,23 @@ export function parseSchema(name: string, schema: any, resolver: RefResolver, de
           REQUIRED: false,
         });
       } else {
+        let variantType = getTypeFromSchema(variant, resolver) || 'ANY';
+        if (variantType === 'OBJECT') {
+          const subName = sanitizeName(name + '_variant_' + i);
+          variantType = `STRUCT(${subName})`;
+          structs[subName] = parseSchema(subName, variant, resolver, depth + 1, visitedRefs, structs);
+        } else if (variantType === '[]OBJECT') {
+          const subName = sanitizeName(name + '_variant_' + i + '_Item');
+          variantType = `[]STRUCT(${subName})`;
+          if (variant.items) structs[subName] = parseSchema(subName, variant.items, resolver, depth + 1, visitedRefs, structs);
+        } else if (variantType === 'map[STRING]OBJECT') {
+          const subName = sanitizeName(name + '_variant_' + i + '_Value');
+          variantType = `map[STRING]STRUCT(${subName})`;
+          if (variant.additionalProperties) structs[subName] = parseSchema(subName, variant.additionalProperties, resolver, depth + 1, visitedRefs, structs);
+        }
         fields.push({
           name: `variant_${i}`,
-          TYPE: 'ANY',
+          TYPE: variantType,
           REQUIRED: false,
         });
       }
@@ -238,9 +255,21 @@ export function parseSchema(name: string, schema: any, resolver: RefResolver, de
   if (schema.properties) {
     for (const [key, prop] of Object.entries<any>(schema.properties)) {
       let type = getTypeFromSchema(prop, resolver);
-      if (type === 'OBJECT') type = `STRUCT(${sanitizeName(name + '_' + key)})`;
-      if (type === '[]OBJECT') type = `[]STRUCT(${sanitizeName(name + '_' + key + '_Item')})`;
-      if (type === 'map[STRING]OBJECT') type = `map[STRING]STRUCT(${sanitizeName(name + '_' + key + '_Value')})`;
+      if (type === 'OBJECT') {
+        const subName = sanitizeName(name + '_' + key);
+        type = `STRUCT(${subName})`;
+        structs[subName] = parseSchema(subName, prop, resolver, depth + 1, visitedRefs, structs);
+      }
+      if (type === '[]OBJECT') {
+        const subName = sanitizeName(name + '_' + key + '_Item');
+        type = `[]STRUCT(${subName})`;
+        if (prop.items) structs[subName] = parseSchema(subName, prop.items, resolver, depth + 1, visitedRefs, structs);
+      }
+      if (type === 'map[STRING]OBJECT') {
+        const subName = sanitizeName(name + '_' + key + '_Value');
+        type = `map[STRING]STRUCT(${subName})`;
+        if (prop.additionalProperties) structs[subName] = parseSchema(subName, prop.additionalProperties, resolver, depth + 1, visitedRefs, structs);
+      }
       const required = (schema.required || []).includes(key);
       const field: any = {
         name: key,
@@ -313,27 +342,6 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
   const structs: Record<string, any[]> = {};
   const schemas = spec.components?.schemas || spec.definitions || {};
   
-  // Common OpenAPI pattern: `{ allOf: [{ $ref: X }], description: "..." }`
-  // wraps a $ref just to attach sibling keys. parseSchema already unwraps
-  // this when computing field types (and may generate nested struct names
-  // like `${name}_${key}` for X's own inline-object properties), so the
-  // traversal below must resolve the same way or those generated names
-  // never get registered and end up as dangling STRUCT(...) references.
-  function resolveAllOfProperties(schema: any, depth = 0): Record<string, any> | undefined {
-    if (!schema || typeof schema !== 'object' || depth > 5) return undefined;
-    const target = schema.$ref ? resolver.resolveRef(schema.$ref) : schema;
-    if (!target) return undefined;
-    if (target.properties && typeof target.properties === 'object') return target.properties;
-    if (Array.isArray(target.allOf)) {
-      const merged: Record<string, any> = {};
-      for (const member of target.allOf) {
-        Object.assign(merged, resolveAllOfProperties(member, depth + 1) || {});
-      }
-      return Object.keys(merged).length > 0 ? merged : undefined;
-    }
-    return undefined;
-  }
-
   function collectAllReferencedSchemas(schema: any, rawName: string, depth = 0) {
     const name = sanitizeName(rawName);
     if (!schema || typeof schema !== 'object' || !name || structs[name]) return;
@@ -344,102 +352,33 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
     // leaf just won't get a struct definition beyond this point.
     if (depth > 20) return;
     const resolved = schema.$ref ? resolver.resolveRef(schema.$ref) : schema;
-    const fields = parseSchema(name, resolved, resolver);
+    
+    // Parse the schema using parseSchema. We pass structs down so it can
+    // recursively generate definitions for any inline objects or anyOf variants
+    // it encounters, completely removing the need for manual traversal here.
+    const fields = parseSchema(name, resolved, resolver, 0, new Set(), structs);
 
-    // Only add the struct if it's actually a struct schema!
-    // Adding non-structs (like arrays or maps) generates empty structs.
-    // We still traverse non-structs below (e.g. arrays) to find nested structs.
     if (isStructSchema(resolved)) {
       structs[name] = fields;
-    }
-
-    // Traverse all properties (falling back to a merged allOf when the
-    // schema has no properties of its own, e.g. { allOf: [{$ref: X}] })
-    const traversalProperties = resolved && isStructSchema(resolved)
-      ? (resolved.properties && typeof resolved.properties === 'object' ? resolved.properties : resolveAllOfProperties(resolved))
-      : undefined;
-    if (traversalProperties) {
-      for (const [propName, prop] of Object.entries<any>(traversalProperties)) {
-        const propRef = prop && typeof prop === 'object' ? (prop.$ref || getSingleAllOfRef(prop)) : undefined;
-        if (propRef) {
-          const refName = extractRefName(propRef);
-          if (refName) collectAllReferencedSchemas(resolver.resolveRef(propRef), refName, depth + 1);
-        } else if (prop && typeof prop === 'object' && prop.type === 'array' && prop.items) {
-          const itemsRef = prop.items && typeof prop.items === 'object' ? (prop.items.$ref || getSingleAllOfRef(prop.items)) : undefined;
-          if (itemsRef) {
-            const refName = extractRefName(itemsRef);
-            if (refName) collectAllReferencedSchemas(resolver.resolveRef(itemsRef), refName, depth + 1);
-          } else if (prop.items && typeof prop.items === 'object' && isStructSchema(prop.items)) {
-            collectAllReferencedSchemas(prop.items, name + '_' + propName + '_Item', depth + 1);
-          }
-        } else if (prop && typeof prop === 'object') {
-          if (isStructSchema(prop)) {
-            collectAllReferencedSchemas(prop, name + '_' + propName, depth + 1);
-          } else if (prop.type === 'array' && prop.items && isStructSchema(prop.items)) {
-            collectAllReferencedSchemas(prop.items, name + '_' + propName + '_Item', depth + 1);
-          } else if (prop.additionalProperties && typeof prop.additionalProperties === 'object') {
-            const addlRef = prop.additionalProperties.$ref || getSingleAllOfRef(prop.additionalProperties);
-            if (addlRef) {
-              const refName = extractRefName(addlRef);
-              if (refName) collectAllReferencedSchemas(resolver.resolveRef(addlRef), refName, depth + 1);
-            } else if (isStructSchema(prop.additionalProperties)) {
-              collectAllReferencedSchemas(prop.additionalProperties, name + '_' + propName + '_Value', depth + 1);
-            }
-          }
-        }
-      }
-    }
-    // Traverse additionalProperties
-    const addlProps = resolved && typeof resolved === 'object' ? resolved.additionalProperties : undefined;
-    if (addlProps && typeof addlProps === 'object') {
-      const addlRef = addlProps.$ref || getSingleAllOfRef(addlProps);
-      if (addlRef) {
-        const refName = extractRefName(addlRef);
-        if (refName) collectAllReferencedSchemas(resolver.resolveRef(addlRef), refName, depth + 1);
-      } else if (addlProps.type === 'array' && addlProps.items) {
-        const itemsRef = addlProps.items.$ref || getSingleAllOfRef(addlProps.items);
-        if (itemsRef) {
-          const refName = extractRefName(itemsRef);
-          if (refName) collectAllReferencedSchemas(resolver.resolveRef(itemsRef), refName, depth + 1);
-        } else if (isStructSchema(addlProps.items)) {
-          collectAllReferencedSchemas(addlProps.items, name + '_Value_Item', depth + 1);
-        }
-      } else if (isStructSchema(addlProps)) {
-        collectAllReferencedSchemas(addlProps, name + '_Value', depth + 1);
-      }
-    }
-    // Traverse array items at root
-    if (resolved && resolved.type === 'array' && resolved.items) {
-      if (resolved.items && typeof resolved.items === 'object' && resolved.items.$ref) {
-        const refName = extractRefName(resolved.items.$ref);
-        if (refName) collectAllReferencedSchemas(resolver.resolveRef(resolved.items.$ref), refName, depth + 1);
-      } else if (resolved.items && typeof resolved.items === 'object' && isStructSchema(resolved.items)) {
-        collectAllReferencedSchemas(resolved.items, name + '_Item', depth + 1);
-      }
-    }
-    // Traverse allOf/oneOf/anyOf
-    for (const combiner of ['allOf', 'oneOf', 'anyOf']) {
-      if (resolved && Array.isArray(resolved[combiner])) {
-        for (const subSchema of resolved[combiner]) {
-          if (subSchema && typeof subSchema === 'object' && subSchema.$ref) {
-            const refName = extractRefName(subSchema.$ref);
-            if (refName) collectAllReferencedSchemas(resolver.resolveRef(subSchema.$ref), refName, depth + 1);
-          } else if (subSchema && typeof subSchema === 'object') {
-            collectAllReferencedSchemas(subSchema, name + '_' + combiner, depth + 1);
-          }
-        }
-      }
     }
   }
   
   // Extract schemas from components
   for (const name in schemas) {
-    collectAllReferencedSchemas(schemas[name], name);
     const schema = schemas[name];
-    if (schema && (schema.oneOf || schema.anyOf)) {
+    if (!schema || typeof schema !== 'object') continue;
+    
+    if (schema.type === 'array' && schema.items && !schema.items.$ref && isStructSchema(schema.items)) {
+      const itemName = `${sanitizeName(name)}_Item`;
+      collectAllReferencedSchemas(schema.items, itemName);
+    } else {
+      collectAllReferencedSchemas(schema, name);
+    }
+    
+    if (schema.oneOf || schema.anyOf) {
       // Build union struct with actual variant types
       const unionName = `${sanitizeName(name)}_Union`;
-      const unionFields = parseSchema(unionName, schema, resolver);
+      const unionFields = parseSchema(unionName, schema, resolver, 0, new Set(), structs);
       structs[unionName] = unionFields.length > 0 ? unionFields : [{ name: 'value', TYPE: 'ANY', REQUIRED: false }];
     }
   }

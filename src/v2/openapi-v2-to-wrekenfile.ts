@@ -428,7 +428,7 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
       // v2.0.2: STATUS code is required in ERRORS
       const errorItem: any = {
         TYPE: errorType,
-        STATUS: statusCode || (code === 'default' ? 500 : parseInt(code)),
+        STATUS: !isNaN(statusCode) ? statusCode : (code === 'default' ? 500 : 400),
         WHEN: when,
       };
       errors.push(errorItem);

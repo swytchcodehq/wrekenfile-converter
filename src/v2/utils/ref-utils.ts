@@ -105,17 +105,7 @@ export class RefResolver {
  */
 export function sanitizeName(raw: string): string {
   if (!raw) return '';
-  const sanitized = raw.replace(/[^a-zA-Z0-9_]/g, '_');
-  if (sanitized === raw) return sanitized;
-  
-  // Use a simple deterministic hash (djb2) to ensure uniqueness
-  let hash = 5381;
-  for (let i = 0; i < raw.length; i++) {
-    hash = ((hash << 5) + hash) + raw.charCodeAt(i); /* hash * 33 + c */
-  }
-  // Convert to positive hex string
-  const suffix = (hash >>> 0).toString(16);
-  return `${sanitized}_${suffix}`;
+  return raw.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
 }
 
 /**
@@ -124,10 +114,16 @@ export function sanitizeName(raw: string): string {
  */
 export function extractRefName(ref: string): string | undefined {
   if (!ref || typeof ref !== 'string') return undefined;
-  const rawTail = ref.split('/').pop();
-  if (!rawTail) return undefined;
-  
-  // Apply JSON Pointer decoding
-  const decoded = decodeURIComponent(rawTail.replace(/~1/g, '/').replace(/~0/g, '~'));
-  return sanitizeName(decoded);
+  // Handle paths like #/components/schemas/Name or deep refs like #/components/schemas/Name/properties/field/oneOf/0
+  const parts = ref.split('/')
+    .filter(p => p !== '#' && p !== 'components' && p !== 'schemas' && p !== 'definitions')
+    .map(p => {
+      try {
+        return decodeURIComponent(p.replace(/~1/g, '/').replace(/~0/g, '~'));
+      } catch (e) {
+        return p.replace(/~1/g, '/').replace(/~0/g, '~');
+      }
+    });
+  if (parts.length === 0) return undefined;
+  return sanitizeName(parts.join('_'));
 }
