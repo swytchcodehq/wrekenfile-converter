@@ -242,7 +242,7 @@ export function parseSchema(name: string, schema: any, resolver: RefResolver, de
           TYPE: variantType,
           REQUIRED: false,
         });
-      } else if (variant && typeof variant === 'object' && variant.type && variant.type !== 'object') {
+      } else if (variant && typeof variant === 'object' && variant.type && variant.type !== 'object' && variant.type !== 'array') {
         const variantField: any = {
           name: `variant_${i}`,
           TYPE: mapType(variant.type, variant.format),

@@ -52,15 +52,22 @@ import {
 
 const generateSummary = generateOpenApiSummary;
 
+function resolveContentType(requestBody: any): string | undefined {
+  if (!requestBody?.content) return undefined;
+  const contentTypes = Object.keys(requestBody.content);
+  if (contentTypes.length === 0) return undefined;
+
+  let contentType = [CONTENT_TYPE_JSON, 'multipart/form-data', 'application/x-www-form-urlencoded']
+    .find((ct) => contentTypes.includes(ct) && requestBody.content[ct]?.schema);
+    
+  if (!contentType) {
+    contentType = contentTypes[0];
+  }
+  return contentType;
+}
 
 function getContentTypeAndBodyType(op: any): { contentType: string; bodyType: string } {
-  const requestBody = op.requestBody;
-  if (!requestBody?.content) {
-    return { contentType: CONTENT_TYPE_JSON, bodyType: BODYTYPE_RAW };
-  }
-
-  const contentTypes = Object.keys(requestBody.content);
-  const contentType = contentTypes.includes(CONTENT_TYPE_JSON) ? CONTENT_TYPE_JSON : (contentTypes[0] || CONTENT_TYPE_JSON);
+  const contentType = resolveContentType(op.requestBody) || CONTENT_TYPE_JSON;
   
   let bodyType = BODYTYPE_RAW;
   if (contentType === CONTENT_TYPE_FORM_DATA) {
@@ -219,22 +226,8 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver, operation
 function extractRequestBody(op: any, operationId: string, method: string, path: string, _spec: any, resolver: RefResolver): any[] {
   const inputParams: any[] = [];
   const requestBody = op.requestBody;
-  if (!requestBody?.content) {
-    return inputParams;
-  }
-  // Pick by priority (JSON, then multipart, then urlencoded) rather than
-  // declaration order. If none of the structured types have a schema,
-  // fallback to the first available content type (e.g. application/octet-stream, text/plain)
-  const contentTypes = Object.keys(requestBody.content);
-  let contentType = [CONTENT_TYPE_JSON, 'multipart/form-data', 'application/x-www-form-urlencoded']
-    .find((ct) => contentTypes.includes(ct) && requestBody.content[ct]?.schema);
-    
-  if (!contentType && contentTypes.length > 0) {
-    // If no preferred type with a schema is found, pick the first available content type
-    // even if it lacks a schema (e.g., raw binary uploads)
-    contentType = contentTypes[0];
-  }
-
+  
+  const contentType = resolveContentType(requestBody);
   if (!contentType) {
     return inputParams;
   }
