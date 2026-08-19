@@ -105,9 +105,16 @@ export class RefResolver {
  */
 export function sanitizeName(raw: string): string {
   if (!raw) return '';
-  const sanitized = raw.replace(/[^a-zA-Z0-9_]/g, '_');
-  if (sanitized === raw) return sanitized;
+  const sanitized = raw.replace(/[^a-zA-Z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
   
+  // If the string was already perfectly valid (and didn't change length/content other than underscores), we could just return it.
+  // But strictly speaking, the test expects a hash if ANY non-alphanumeric chars were replaced.
+  // The original check was: const sanitized = raw.replace(/[^a-zA-Z0-9_]/g, '_'); if (sanitized === raw) return sanitized;
+  const originalSanitized = raw.replace(/[^a-zA-Z0-9_]/g, '_');
+  if (originalSanitized === raw) {
+      return originalSanitized; // It was already valid
+  }
+
   // Use a simple deterministic hash (djb2) to ensure uniqueness
   let hash = 5381;
   for (let i = 0; i < raw.length; i++) {
@@ -124,10 +131,16 @@ export function sanitizeName(raw: string): string {
  */
 export function extractRefName(ref: string): string | undefined {
   if (!ref || typeof ref !== 'string') return undefined;
-  const rawTail = ref.split('/').pop();
-  if (!rawTail) return undefined;
-  
-  // Apply JSON Pointer decoding
-  const decoded = decodeURIComponent(rawTail.replace(/~1/g, '/').replace(/~0/g, '~'));
-  return sanitizeName(decoded);
+  // Handle paths like #/components/schemas/Name or deep refs like #/components/schemas/Name/properties/field/oneOf/0
+  const parts = ref.split('/')
+    .filter(p => p !== '#' && p !== 'components' && p !== 'schemas' && p !== 'definitions')
+    .map(p => {
+      try {
+        return decodeURIComponent(p).replace(/~1/g, '/').replace(/~0/g, '~');
+      } catch {
+        return p.replace(/~1/g, '/').replace(/~0/g, '~');
+      }
+    });
+  if (parts.length === 0) return undefined;
+  return sanitizeName(parts.join('_'));
 }

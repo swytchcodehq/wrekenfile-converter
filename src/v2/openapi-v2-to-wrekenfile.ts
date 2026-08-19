@@ -1,5 +1,5 @@
 // openapi-v2-swagger-to-wrekenfile-v2.ts
-// Converts OpenAPI v2 (Swagger) specifications to Wrekenfile v2.0.1 format
+// Converts OpenAPI v2 (Swagger) specifications to Wrekenfile v2.0.2 format
 
 
 import { load } from 'js-yaml';
@@ -7,6 +7,7 @@ import { generateYamlString } from './utils/yaml-utils';
 import { 
   WREKENFILE_VERSION,
   EXECUTION_MODE_SYNC,
+  EXECUTION_MODE_ASYNC,
   TYPE_ANY,
   BODYTYPE_RAW,
   CONTENT_TYPE_JSON,
@@ -27,7 +28,7 @@ import { resolveCanonicalIds, type MethodCanonicalInput } from './utils/canonica
 import { filterStructsByUsage } from './utils/struct-utils';
 import { computeConversionStats, type ConversionStats } from './utils/conversion-stats';
 
-import { RefResolver } from './utils/ref-utils';
+import { RefResolver, sanitizeName } from './utils/ref-utils';
 import {
   extractStructs,
   getTypeFromSchema,
@@ -35,6 +36,7 @@ import {
   getErrorStructName,
   isStructSchema,
   getSingleAllOfRef,
+  applyConstraints,
 } from './utils/schema-utils';
 
 
@@ -176,27 +178,28 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver): any[] {
       
       // v2.0.2: All INPUTS must have LOCATION field
       // Build input parameter with LOCATION
-      if (isRequired && !hasDefault) {
-        // Simple form with LOCATION
-        const inputParam: any = {};
-        inputParam[paramName] = {
-          TYPE: type,
-          LOCATION: paramIn,
-        };
-        inputParams.push(inputParam);
-      } else {
-        // Extended form with LOCATION
-        const inputParam: any = {};
-        inputParam[paramName] = {
-          TYPE: type,
-          REQUIRED: isRequired,
-          LOCATION: paramIn,
-        };
-        if (hasDefault) {
-          inputParam[paramName].DEFAULT = paramSchema.default;
-        }
-        inputParams.push(inputParam);
+      const inputParam: any = {};
+      inputParam[paramName] = {
+        TYPE: type,
+        REQUIRED: isRequired,
+        LOCATION: paramIn,
+      };
+      if (hasDefault) {
+        inputParam[paramName].DEFAULT = paramSchema.default;
       }
+      if (paramSchema && Object.keys(paramSchema).length > 0) {
+        applyConstraints(inputParam[paramName], paramSchema);
+      } else if (param) {
+        applyConstraints(inputParam[paramName], param);
+      }
+      if (param && typeof param === 'object') {
+        const styleVal = param.style || param.collectionFormat;
+        if (styleVal) inputParam[paramName].STYLE = styleVal;
+        if (param.explode !== undefined) inputParam[paramName].EXPLODE = param.explode;
+        if (param.deprecated === true) inputParam[paramName].DEPRECATED = true;
+        if (param.example !== undefined) inputParam[paramName].EXAMPLE = param.example;
+      }
+      inputParams.push(inputParam);
     }
   }
   
@@ -216,7 +219,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     } else if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema && isStructSchema(bodyParam.schema)) {
       // Inline object schema - use generated struct name
       const requestStructName = generateStructName(operationId, method, path, 'Request');
-      type = `STRUCT(${requestStructName})`;
+      type = `STRUCT(${sanitizeName(requestStructName)})`;
     } else if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema) {
       // Non-object inline schema (array, primitive, map) - no matching
       // STRUCTS entry will ever be registered for it, so don't wrap it in
@@ -230,53 +233,39 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     const isRequired = bodyParam && typeof bodyParam === 'object' ? bodyParam.required === true : false;
     
     // v2.0.2: All INPUTS must have LOCATION field
-    if (isRequired) {
-      // Simple form with LOCATION
-      const inputParam: any = {};
-      inputParam.body = {
-        TYPE: type,
-        LOCATION: 'body',
-      };
-      inputParams.push(inputParam);
-    } else {
-      // Extended form with LOCATION
-      const inputParam: any = {};
-      inputParam.body = {
-        TYPE: type,
-        REQUIRED: false,
-        LOCATION: 'body',
-      };
-      inputParams.push(inputParam);
+    const inputParam: any = {};
+    inputParam.body = {
+      TYPE: type,
+      REQUIRED: isRequired,
+      LOCATION: 'body',
+    };
+    if (bodyParam && typeof bodyParam === 'object' && bodyParam.schema) {
+      applyConstraints(inputParam.body, bodyParam.schema);
     }
+    inputParams.push(inputParam);
   }
   
   // Handle formData for multipart/form-data (OpenAPI v2)
   if (op.parameters) {
     for (const param of op.parameters) {
       if (param && typeof param === 'object' && param.in === 'formData') {
-        const type = param.type === 'file' ? 'STRING' : getTypeFromSchema({ type: param.type, format: param.format, items: param.items }, resolver);
+        const type = param.type === 'file' ? 'BINARY' : getTypeFromSchema({ type: param.type, format: param.format, items: param.items }, resolver);
         // FormData parameters default to false (optional) if not specified
         const isRequired = param.required === true;
         const hasDefault = param.default !== undefined;
         
         const inputParam: any = {};
         // v2.0.2: All INPUTS must have LOCATION field
-        if (isRequired && !hasDefault) {
-          // Simple form with LOCATION
-          inputParam[param.name] = {
-            TYPE: type,
-            LOCATION: 'body',
-          };
-        } else {
-          // Extended form with LOCATION
-          inputParam[param.name] = {
-            TYPE: type,
-            REQUIRED: isRequired,
-            LOCATION: 'body',
-          };
-          if (hasDefault) {
-            inputParam[param.name].DEFAULT = param.default;
-          }
+        inputParam[param.name] = {
+          TYPE: type,
+          REQUIRED: isRequired,
+          LOCATION: 'body',
+        };
+        if (hasDefault) {
+          inputParam[param.name].DEFAULT = param.default;
+        }
+        if (param) {
+          applyConstraints(inputParam[param.name], param);
         }
         inputParams.push(inputParam);
       }
@@ -408,17 +397,16 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
         const schema = actualResponse.schema;
         if (schema.$ref) {
           errorType = getTypeFromSchema(schema, resolver);
-        } else if (schema.type && schema.type !== 'object') {
-          // Primitive / array error schema — emit the primitive type directly
-          // instead of wrapping in a dangling STRUCT(...).
-          errorType = getTypeFromSchema(schema, resolver);
-        } else {
+        } else if (isStructSchema(schema)) {
           // Inline object error schema — generate a struct name. Shared
           // Swagger v2 responses (spec.responses.X) get a stable name so the
           // corresponding struct registered by extractStructs is the same one
           // extractErrors references.
           const errorStructName = getErrorStructName(response, op, code);
           errorType = `STRUCT(${errorStructName})`;
+        } else {
+          // Primitive / array error schema / non-struct object
+          errorType = getTypeFromSchema(schema, resolver);
         }
       }
 
@@ -428,7 +416,7 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
       // v2.0.2: STATUS code is required in ERRORS
       const errorItem: any = {
         TYPE: errorType,
-        STATUS: statusCode || (code === 'default' ? 500 : parseInt(code)),
+        STATUS: !isNaN(statusCode) ? statusCode : (code === 'default' ? 500 : 400),
         WHEN: when,
       };
       errors.push(errorItem);
@@ -495,6 +483,11 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       if (op.description) {
         methodDef.DESC = op.description;
       }
+      
+      // Add DEPRECATED if operation is deprecated
+      if (op.deprecated === true) {
+        methodDef.DEPRECATED = true;
+      }
 
       // HTTP section (mandatory for API methods)
       methodDef.HTTP = {
@@ -517,10 +510,47 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
         methodDef.HTTP.BODYTYPE = bodyType;
       }
 
+      // Determine Execution Mode
+      let executionMode = EXECUTION_MODE_SYNC;
+
+      // Add SECURITY metadata
+      const security = op.security !== undefined ? op.security : spec.security;
+      if (security && Array.isArray(security)) {
+        if (security.length === 0) {
+          methodDef.SECURITY = [];
+        } else {
+          methodDef.SECURITY = security.map((req: any) => {
+            const enrichedReq: any = {};
+            for (const [schemeName, scopes] of Object.entries(req)) {
+              const scheme = spec.securityDefinitions?.[schemeName];
+              if (scheme) {
+                enrichedReq[schemeName] = {
+                  type: scheme.type,
+                };
+                if (scheme.scheme) enrichedReq[schemeName].scheme = scheme.scheme;
+                if (scheme.in) enrichedReq[schemeName].in = scheme.in;
+                if (scheme.name) enrichedReq[schemeName].name = scheme.name;
+                
+                const scopesArr = scopes as string[];
+                if (scopesArr && scopesArr.length > 0) {
+                  enrichedReq[schemeName].scopes = scopesArr;
+                }
+              } else {
+                enrichedReq[schemeName] = { scopes };
+              }
+            }
+            return enrichedReq;
+          });
+        }
+      }
+      if (op.responses && op.responses['202']) {
+        executionMode = EXECUTION_MODE_ASYNC;
+      }
+
       // EXECUTION section (mandatory) - v2.0.2 requires KIND
       methodDef.EXECUTION = {
         KIND: 'http',
-        MODE: EXECUTION_MODE_SYNC, // REST APIs are synchronous request/response
+        MODE: executionMode,
       };
 
       // INPUTS section (optional)
@@ -706,14 +736,16 @@ function generateWrekenfile(specStr: string | any, baseDir: string): string {
     const structs = extractStructs(spec, resolver);
 
     // Resolve canonical IDs for all methods
-    const canonicalInputs: MethodCanonicalInput[] = Object.entries(methods).map(
-      ([methodId, methodData]) => ({
-        methodId,
-        httpMethod: methodData.HTTP?.METHOD,
-        endpoint: methodData.HTTP?.ENDPOINT,
-        existingCanonicalId: methodData.CANONICAL_ID,
-      })
-    );
+    const canonicalInputs: MethodCanonicalInput[] = Object.entries(methods)
+      .map(
+        ([methodId, methodData]) => ({
+          methodId,
+          httpMethod: methodData.HTTP?.METHOD,
+          endpoint: methodData.HTTP?.ENDPOINT,
+          existingCanonicalId: methodData.CANONICAL_ID,
+        })
+      )
+      .sort((a, b) => a.methodId.localeCompare(b.methodId));
     const libraryName = spec?.info?.['x-swytchcode-namespace'] || spec?.info?.title || 'unknown';
     const canonicalIdMap = resolveCanonicalIds(canonicalInputs, libraryName);
 

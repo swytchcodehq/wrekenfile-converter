@@ -54,8 +54,7 @@ describe('Postman → Wrekenfile converter', () => {
     const result = generateWrekenfile(collection, variables);
     const parsed = yamlLoad(result) as any;
     // Postman converter should extract structs from JSON response bodies
-    if (parsed.STRUCTS) {
-      expect(Object.keys(parsed.STRUCTS).length).toBeGreaterThanOrEqual(0);
-    }
+    expect(parsed.STRUCTS).toBeDefined();
+    expect(Object.keys(parsed.STRUCTS).length).toBeGreaterThan(0);
   });
 });

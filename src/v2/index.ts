@@ -1,4 +1,4 @@
-// v2 entry point - Wrekenfile spec version 2.1.0
+// v2 entry point - Wrekenfile spec version 2.0.2
 
 // Export OpenAPI v3 converter
 export { generateWrekenfile, generateWrekenfileWithStats } from './openapi-to-wreken';

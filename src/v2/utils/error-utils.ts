@@ -2,11 +2,19 @@
  * Error handling and logging utilities for v2 converters
  */
 
-export interface ConverterError {
-  message: string;
+export class ConverterError extends Error {
   code: string;
   context?: Record<string, any>;
   cause?: Error;
+
+  constructor(message: string, code: string, context?: Record<string, any>, cause?: Error) {
+    super(message);
+    this.name = 'ConverterError';
+    this.code = code;
+    this.context = context;
+    this.cause = cause;
+    Object.setPrototypeOf(this, ConverterError.prototype);
+  }
 }
 
 /**
@@ -15,15 +23,7 @@ export interface ConverterError {
 export function logError(error: ConverterError | Error, context?: Record<string, any>): void {
   const timestamp = new Date().toISOString();
   
-  if (error instanceof Error) {
-    console.error(`[${timestamp}] ERROR:`, error.message);
-    if (context) {
-      console.error('  Context:', JSON.stringify(context, null, 2));
-    }
-    if (error.stack) {
-      console.error('  Stack:', error.stack);
-    }
-  } else {
+  if (error instanceof ConverterError) {
     console.error(`[${timestamp}] ERROR [${error.code}]:`, error.message);
     if (error.context) {
       console.error('  Context:', JSON.stringify(error.context, null, 2));
@@ -37,6 +37,19 @@ export function logError(error: ConverterError | Error, context?: Record<string,
         console.error('  Cause Stack:', error.cause.stack);
       }
     }
+    if (error.stack) {
+      console.error('  Stack:', error.stack);
+    }
+  } else if (error instanceof Error) {
+    console.error(`[${timestamp}] ERROR:`, error.message);
+    if (context) {
+      console.error('  Context:', JSON.stringify(context, null, 2));
+    }
+    if (error.stack) {
+      console.error('  Stack:', error.stack);
+    }
+  } else {
+    console.error(`[${timestamp}] UNKNOWN ERROR:`, error);
   }
 }
 
@@ -49,7 +62,7 @@ export function createConverterError(
   context?: Record<string, any>,
   cause?: Error
 ): ConverterError {
-  return { message, code, context, cause };
+  return new ConverterError(message, code, context, cause);
 }
 
 /**
@@ -96,11 +109,30 @@ export function validateOpenApiV3Spec(spec: any): void {
     );
   }
 
-  if (!spec.paths || typeof spec.paths !== 'object') {
+  const hasPaths = 'paths' in spec;
+  const hasWebhooks = 'webhooks' in spec;
+
+  if (!hasPaths && !hasWebhooks) {
     throw createConverterError(
-      "Invalid OpenAPI v3 specification: missing or invalid 'paths' field",
-      "MISSING_PATHS",
-      { pathsType: typeof spec.paths, specKeys: Object.keys(spec) }
+      "Invalid OpenAPI v3 specification: missing 'paths' or 'webhooks' field",
+      'MISSING_PATHS',
+      { specKeys: Object.keys(spec) }
+    );
+  }
+
+  if (hasPaths && (typeof spec.paths !== 'object' || spec.paths === null || Array.isArray(spec.paths))) {
+    throw createConverterError(
+      "Invalid OpenAPI v3 specification: 'paths' must be an object",
+      'INVALID_PATHS_TYPE',
+      { pathsType: typeof spec.paths }
+    );
+  }
+
+  if (hasWebhooks && (typeof spec.webhooks !== 'object' || spec.webhooks === null || Array.isArray(spec.webhooks))) {
+    throw createConverterError(
+      "Invalid OpenAPI v3 specification: 'webhooks' must be an object",
+      'INVALID_WEBHOOKS_TYPE',
+      { webhooksType: typeof spec.webhooks }
     );
   }
 }

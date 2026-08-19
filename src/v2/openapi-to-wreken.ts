@@ -1,5 +1,5 @@
 // openapi-to-wrekenfile-v2.ts
-// Converts OpenAPI v3 specifications to Wrekenfile v2.0.1 format
+// Converts OpenAPI v3 specifications to Wrekenfile v2.0.2 format
 
 
 
@@ -9,6 +9,7 @@ import {
   WREKENFILE_VERSION,
   DEFAULT_BASE_URL,
   EXECUTION_MODE_SYNC,
+  EXECUTION_MODE_ASYNC,
   TYPE_ANY,
   BODYTYPE_RAW,
   CONTENT_TYPE_JSON,
@@ -34,7 +35,7 @@ import { resolveCanonicalIds, type MethodCanonicalInput } from './utils/canonica
 import { filterStructsByUsage } from './utils/struct-utils';
 import { computeConversionStats, type ConversionStats } from './utils/conversion-stats';
 
-import { RefResolver } from './utils/ref-utils';
+import { RefResolver, sanitizeName } from './utils/ref-utils';
 import {
   extractStructs,
   getTypeFromSchema,
@@ -42,6 +43,7 @@ import {
   getErrorStructName,
   isStructSchema,
   getSingleAllOfRef,
+  applyConstraints,
 } from './utils/schema-utils';
 
 
@@ -50,15 +52,22 @@ import {
 
 const generateSummary = generateOpenApiSummary;
 
+function resolveContentType(requestBody: any): string | undefined {
+  if (!requestBody?.content) return undefined;
+  const contentTypes = Object.keys(requestBody.content);
+  if (contentTypes.length === 0) return undefined;
+
+  let contentType = [CONTENT_TYPE_JSON, 'multipart/form-data', 'application/x-www-form-urlencoded']
+    .find((ct) => contentTypes.includes(ct) && requestBody.content[ct]?.schema);
+    
+  if (!contentType) {
+    contentType = contentTypes[0];
+  }
+  return contentType;
+}
 
 function getContentTypeAndBodyType(op: any): { contentType: string; bodyType: string } {
-  const requestBody = op.requestBody;
-  if (!requestBody?.content) {
-    return { contentType: CONTENT_TYPE_JSON, bodyType: BODYTYPE_RAW };
-  }
-
-  const contentTypes = Object.keys(requestBody.content);
-  const contentType = contentTypes.includes(CONTENT_TYPE_JSON) ? CONTENT_TYPE_JSON : (contentTypes[0] || CONTENT_TYPE_JSON);
+  const contentType = resolveContentType(op.requestBody) || CONTENT_TYPE_JSON;
   
   let bodyType = BODYTYPE_RAW;
   if (contentType === CONTENT_TYPE_FORM_DATA) {
@@ -149,7 +158,7 @@ function getHeadersForOperation(op: any, spec: any, method?: string, resolver?: 
   return headers;
 }
 
-function extractParameters(op: any, _spec: any, resolver: RefResolver): any[] {
+function extractParameters(op: any, _spec: any, resolver: RefResolver, operationId: string, method: string, pathStr: string): any[] {
   const inputParams: any[] = [];
   
   // v2.0.2: All parameters (path, query, header) must be in INPUTS with LOCATION
@@ -170,41 +179,45 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver): any[] {
     }
 
     const paramName = param.name;
-    const paramSchema = param.schema || {};
+    const paramSchema = param.schema;
     
     let type = 'STRING';
-    if (paramSchema.type) {
+    if (paramSchema) {
       type = getTypeFromSchema(paramSchema, resolver);
-    } else if (paramSchema.$ref) {
-      type = getTypeFromSchema(paramSchema, resolver);
+      if (type === 'OBJECT' && !paramSchema.$ref) {
+        const structName = generateStructName(operationId, method, pathStr, `Param_${param.name}`);
+        type = `STRUCT(${sanitizeName(structName)})`;
+      } else if (type === '[]OBJECT' && !paramSchema.$ref) {
+        const structName = generateStructName(operationId, method, pathStr, `Param_${param.name}_Item`);
+        type = `[]STRUCT(${sanitizeName(structName)})`;
+      } else if (type === 'map[STRING]OBJECT' && !paramSchema.$ref) {
+        const structName = generateStructName(operationId, method, pathStr, `Param_${param.name}_Value`);
+        type = `map[STRING]STRUCT(${sanitizeName(structName)})`;
+      }
     }
     
     const isRequired = param.required === true;
-    const hasDefault = paramSchema.default !== undefined;
+    const hasDefault = paramSchema?.default !== undefined;
     
     // v2.0.2: All INPUTS must have LOCATION field
     // Build input parameter with LOCATION
-    if (isRequired && !hasDefault) {
-      // Simple form: - paramName: TYPE (but we need LOCATION, so use extended form)
-      const inputParam: any = {};
-      inputParam[paramName] = {
-        TYPE: type,
-        LOCATION: paramIn,
-      };
-      inputParams.push(inputParam);
-    } else {
-      // Extended form: - paramName: { TYPE: ..., REQUIRED: ..., DEFAULT: ..., LOCATION: ... }
-      const inputParam: any = {};
-      inputParam[paramName] = {
-        TYPE: type,
-        REQUIRED: isRequired,
-        LOCATION: paramIn,
-      };
-      if (hasDefault) {
-        inputParam[paramName].DEFAULT = paramSchema.default;
-      }
-      inputParams.push(inputParam);
+    const inputParam: any = {};
+    inputParam[paramName] = {
+      TYPE: type,
+      REQUIRED: isRequired,
+      LOCATION: paramIn,
+    };
+    if (hasDefault) {
+      inputParam[paramName].DEFAULT = paramSchema.default;
     }
+    if (paramSchema) {
+      applyConstraints(inputParam[paramName], paramSchema);
+    }
+    if (param.style) inputParam[paramName].STYLE = param.style;
+    if (param.explode !== undefined) inputParam[paramName].EXPLODE = param.explode;
+    if (param.deprecated === true) inputParam[paramName].DEPRECATED = true;
+    if (param.example !== undefined) inputParam[paramName].EXAMPLE = param.example;
+    inputParams.push(inputParam);
   }
   
   return inputParams;
@@ -213,17 +226,15 @@ function extractParameters(op: any, _spec: any, resolver: RefResolver): any[] {
 function extractRequestBody(op: any, operationId: string, method: string, path: string, _spec: any, resolver: RefResolver): any[] {
   const inputParams: any[] = [];
   const requestBody = op.requestBody;
-  if (!requestBody?.content) {
+  
+  const contentType = resolveContentType(requestBody);
+  if (!contentType) {
     return inputParams;
   }
-  // Pick by priority (JSON, then multipart, then urlencoded) rather than
-  // declaration order — a spec listing e.g. "application/xml" before
-  // "application/json" in `content` must not cause the JSON body to be
-  // silently skipped.
-  const contentType = [CONTENT_TYPE_JSON, 'multipart/form-data', 'application/x-www-form-urlencoded']
-    .find((ct) => requestBody.content[ct]?.schema);
-  if (contentType === CONTENT_TYPE_JSON && requestBody.content[contentType]?.schema) {
-    const bodySchema = requestBody.content[contentType].schema;
+
+  if (contentType === CONTENT_TYPE_JSON || (!['multipart/form-data', 'application/x-www-form-urlencoded'].includes(contentType))) {
+    const bodyObj = requestBody.content[contentType];
+    const bodySchema = bodyObj?.schema;
     let type: string;
     if (bodySchema && (bodySchema.$ref || getSingleAllOfRef(bodySchema))) {
       type = getTypeFromSchema(bodySchema, resolver);
@@ -231,60 +242,65 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
       const requestStructName = generateStructName(operationId, method, path, 'Request');
       type = `STRUCT(${requestStructName})`;
     } else if (bodySchema) {
-      // Non-object inline schema (array, primitive, map) - no matching
-      // STRUCTS entry will ever be registered for it, so don't wrap it in
-      // a dangling STRUCT(...) reference.
+      // Non-object inline schema (array, primitive, map)
       type = getTypeFromSchema(bodySchema, resolver);
+      if (type === '[]OBJECT') {
+        const requestStructName = generateStructName(operationId, method, path, 'RequestItem');
+        type = `[]STRUCT(${requestStructName})`;
+      } else if (type === 'map[STRING]OBJECT') {
+        const requestStructName = generateStructName(operationId, method, path, 'RequestValue');
+        type = `map[STRING]STRUCT(${requestStructName})`;
+      }
     } else {
       type = 'ANY';
     }
     
     const isRequired = requestBody.required === true;
     // v2.0.2: All INPUTS must have LOCATION field
-    if (isRequired) {
-      // Simple form with LOCATION
-      const inputParam: any = {};
-      inputParam.body = {
-        TYPE: type,
-        LOCATION: 'body',
-      };
-      inputParams.push(inputParam);
-    } else {
-      // Extended form with LOCATION
-      const inputParam: any = {};
-      inputParam.body = {
-        TYPE: type,
-        REQUIRED: false,
-        LOCATION: 'body',
-      };
-      inputParams.push(inputParam);
+    const inputParam: any = {};
+    inputParam.body = {
+      TYPE: type,
+      REQUIRED: isRequired,
+      LOCATION: 'body',
+      CONTENT_TYPE: contentType,
+    };
+    if (bodySchema) {
+      applyConstraints(inputParam.body, bodySchema);
     }
+    inputParams.push(inputParam);
   } else if (contentType === 'multipart/form-data' && requestBody.content[contentType]?.schema) {
     const bodySchema = requestBody.content[contentType].schema;
     if (bodySchema && bodySchema.properties) {
       for (const [key, prop] of Object.entries<any>(bodySchema.properties)) {
-        const type = prop && prop.format === 'binary' ? 'STRING' : getTypeFromSchema(prop, resolver);
+        let type = prop && prop.format === 'binary' ? 'BINARY' : getTypeFromSchema(prop, resolver);
+        if (prop && prop.type === 'array' && prop.items && prop.items.format === 'binary') {
+          type = '[]BINARY';
+        }
+        if (type === 'OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `STRUCT(${sanitizeName(requestStructName + '_' + key)})`;
+        } else if (type === '[]OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `[]STRUCT(${sanitizeName(requestStructName + '_' + key + '_Item')})`;
+        } else if (type === 'map[STRING]OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `map[STRING]STRUCT(${sanitizeName(requestStructName + '_' + key + '_Value')})`;
+        }
         const required = (bodySchema.required || []).includes(key);
         const hasDefault = prop && prop.default !== undefined;
         
         const inputParam: any = {};
         // v2.0.2: All INPUTS must have LOCATION field
-        if (required && !hasDefault) {
-          // Simple form with LOCATION
-          inputParam[key] = {
-            TYPE: type,
-            LOCATION: 'body',
-          };
-        } else {
-          // Extended form with LOCATION
-          inputParam[key] = {
-            TYPE: type,
-            REQUIRED: required,
-            LOCATION: 'body',
-          };
-          if (hasDefault) {
-            inputParam[key].DEFAULT = prop.default;
-          }
+        inputParam[key] = {
+          TYPE: type,
+          REQUIRED: required,
+          LOCATION: 'body',
+        };
+        if (hasDefault) {
+          inputParam[key].DEFAULT = prop.default;
+        }
+        if (prop) {
+          applyConstraints(inputParam[key], prop);
         }
         inputParams.push(inputParam);
       }
@@ -293,28 +309,33 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     const bodySchema = requestBody.content[contentType].schema;
     if (bodySchema && bodySchema.properties) {
       for (const [key, prop] of Object.entries<any>(bodySchema.properties)) {
-        const type = getTypeFromSchema(prop, resolver);
+        const typeRaw = getTypeFromSchema(prop, resolver);
+        let type = typeRaw;
+        if (typeRaw === 'OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `STRUCT(${sanitizeName(requestStructName + '_' + key)})`;
+        } else if (typeRaw === '[]OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `[]STRUCT(${sanitizeName(requestStructName + '_' + key + '_Item')})`;
+        } else if (typeRaw === 'map[STRING]OBJECT' && !prop.$ref) {
+           const requestStructName = generateStructName(operationId, method, path, 'Request');
+           type = `map[STRING]STRUCT(${sanitizeName(requestStructName + '_' + key + '_Value')})`;
+        }
         const required = (bodySchema.required || []).includes(key);
         const hasDefault = prop && prop.default !== undefined;
         
         const inputParam: any = {};
         // v2.0.2: All INPUTS must have LOCATION field
-        if (required && !hasDefault) {
-          // Simple form with LOCATION
-          inputParam[key] = {
-            TYPE: type,
-            LOCATION: 'body',
-          };
-        } else {
-          // Extended form with LOCATION
-          inputParam[key] = {
-            TYPE: type,
-            REQUIRED: required,
-            LOCATION: 'body',
-          };
-          if (hasDefault) {
-            inputParam[key].DEFAULT = prop.default;
-          }
+        inputParam[key] = {
+          TYPE: type,
+          REQUIRED: required,
+          LOCATION: 'body',
+        };
+        if (hasDefault) {
+          inputParam[key].DEFAULT = prop.default;
+        }
+        if (prop) {
+          applyConstraints(inputParam[key], prop);
         }
         inputParams.push(inputParam);
       }
@@ -329,10 +350,15 @@ function extractResponses(op: any, operationId: string, method: string, path: st
   // Only include success responses (2xx) in RETURNS section
   // Error responses go in ERRORS section
   for (const [code, rawResponse] of Object.entries<any>(op.responses || {})) {
-    const statusCode = parseInt(code);
+    const normalizedCode = code.toLowerCase();
+    let statusCode = parseInt(code);
+    if (normalizedCode.endsWith('xx')) {
+      statusCode = parseInt(normalizedCode.charAt(0)) * 100;
+    }
 
     // Only process 2xx success responses
-    if (statusCode < 200 || statusCode >= 300) {
+    // 'default' becomes NaN, which fails the condition and will skip
+    if (isNaN(statusCode) || statusCode < 200 || statusCode >= 300) {
       continue;
     }
 
@@ -361,6 +387,12 @@ function extractResponses(op: any, operationId: string, method: string, path: st
         if (returnType === 'OBJECT' && !schema.$ref) {
           const responseStructName = generateStructName(operationId, method, path, `Response${code}`);
           returnType = `STRUCT(${responseStructName})`;
+        } else if (returnType === '[]OBJECT' && !schema.$ref) {
+          const responseStructName = generateStructName(operationId, method, path, `Response${code}Item`);
+          returnType = `[]STRUCT(${responseStructName})`;
+        } else if (returnType === 'map[STRING]OBJECT' && !schema.$ref) {
+          const responseStructName = generateStructName(operationId, method, path, `Response${code}Value`);
+          returnType = `map[STRING]STRUCT(${responseStructName})`;
         }
       } else {
         // No schema but has content - might be empty body
@@ -426,7 +458,14 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
 
   // Extract error responses (4xx, 5xx)
   for (const [code, rawResponse] of Object.entries<any>(op.responses || {})) {
-    const statusCode = parseInt(code);
+    const normalizedCode = code.toUpperCase();
+    let statusCode = parseInt(code);
+    
+    if (normalizedCode.endsWith('XX')) {
+      // Maps 4XX -> 400, 5XX -> 500
+      statusCode = parseInt(normalizedCode.charAt(0)) * 100;
+    }
+
     if (isNaN(statusCode) && code !== 'default') continue;
 
     if (statusCode >= 400 || code === 'default') {
@@ -442,11 +481,7 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
           const schema = jsonContent.schema;
           if (schema.$ref) {
             errorType = getTypeFromSchema(schema, resolver);
-          } else if (schema.type && schema.type !== 'object') {
-            // Primitive / array error schema — emit the primitive type
-            // directly instead of wrapping in a dangling STRUCT(...).
-            errorType = getTypeFromSchema(schema, resolver);
-          } else {
+          } else if (isStructSchema(schema)) {
             // Inline object error schema. Name it so extractStructs can
             // register the matching definition. Shared components.responses
             // entries get a stable name (Error{code} or Response_{key});
@@ -454,6 +489,9 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
             // name so two different 400 bodies don't collide on `Error400`.
             const errorStructName = getErrorStructName(rawResponse, op, code);
             errorType = `STRUCT(${errorStructName})`;
+          } else {
+            // Primitive / array error schema / non-struct object
+            errorType = getTypeFromSchema(schema, resolver);
           }
         }
       }
@@ -464,7 +502,7 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
       // v2.0.2: STATUS code is required in ERRORS
       const errorItem: any = {
         TYPE: errorType,
-        STATUS: statusCode || (code === 'default' ? 500 : parseInt(code)),
+        STATUS: !isNaN(statusCode) ? statusCode : (code === 'default' ? 500 : 400),
         WHEN: when,
       };
       errors.push(errorItem);
@@ -480,12 +518,20 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
   // Valid HTTP methods
   const validMethods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options', 'trace'];
   
-  // Check if paths exists and is an object
-  if (!spec.paths || typeof spec.paths !== 'object') {
+  // Combine paths and webhooks (OpenAPI 3.1)
+  const pathLikeObjects: Array<{ pathStr: string, pathMethods: any, isWebhook: boolean }> = [];
+  if (spec.paths && typeof spec.paths === 'object') {
+    pathLikeObjects.push(...Object.entries<any>(spec.paths).map(([k, v]) => ({ pathStr: k, pathMethods: v, isWebhook: false })));
+  }
+  if (spec.webhooks && typeof spec.webhooks === 'object') {
+    pathLikeObjects.push(...Object.entries<any>(spec.webhooks).map(([k, v]) => ({ pathStr: k, pathMethods: v, isWebhook: true })));
+  }
+  
+  if (pathLikeObjects.length === 0) {
     return methods;
   }
   
-  for (const [pathStr, pathMethods] of Object.entries<any>(spec.paths)) {
+  for (const { pathStr, pathMethods, isWebhook } of pathLikeObjects) {
     const pathLevelParams = pathMethods.parameters || [];
     
     for (const [method, op] of Object.entries<any>(pathMethods)) {
@@ -507,11 +553,18 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       
       // Merge path-level and operation-level parameters (OpenAPI v3)
       const allParams = [...pathLevelParams, ...(op.parameters || [])];
-      const opWithMergedParams = { ...op, parameters: allParams };
+      
+      // Resolve request body early so HTTP metadata extraction sees it
+      let resolvedRequestBody = op.requestBody;
+      if (resolvedRequestBody && resolvedRequestBody.$ref) {
+        resolvedRequestBody = resolver.resolveRef(resolvedRequestBody.$ref);
+      }
+      
+      const opWithMergedParams = { ...op, parameters: allParams, requestBody: resolvedRequestBody };
       
       const { contentType, bodyType } = getContentTypeAndBodyType(opWithMergedParams);
       const headers = getHeadersForOperation(opWithMergedParams, spec, method, resolver);
-      const pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, resolver);
+      const pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, resolver, operationId, method, pathStr);
       const bodyParams = extractRequestBody(opWithMergedParams, operationId, method, pathStr, spec, resolver);
       const inputParams = [...pathQueryHeaderParams, ...bodyParams];
       const returns = extractResponses(opWithMergedParams, operationId, method, pathStr, spec, resolver);
@@ -528,6 +581,11 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       // Add DESC if description exists
       if (op.description) {
         methodDef.DESC = op.description;
+      }
+      
+      // Add DEPRECATED if operation is deprecated
+      if (op.deprecated === true) {
+        methodDef.DEPRECATED = true;
       }
 
       // HTTP section (mandatory for API methods)
@@ -551,10 +609,54 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
         methodDef.HTTP.BODYTYPE = bodyType;
       }
 
+      // Add SECURITY metadata
+      const security = op.security !== undefined ? op.security : spec.security;
+      if (security && Array.isArray(security)) {
+        if (security.length === 0) {
+          methodDef.SECURITY = [];
+        } else {
+          methodDef.SECURITY = security.map((req: any) => {
+            const enrichedReq: any = {};
+            for (const [schemeName, scopes] of Object.entries(req)) {
+              const scheme = spec.components?.securitySchemes?.[schemeName];
+              if (scheme) {
+                enrichedReq[schemeName] = {
+                  type: scheme.type,
+                };
+                if (scheme.scheme) enrichedReq[schemeName].scheme = scheme.scheme;
+                if (scheme.in) enrichedReq[schemeName].in = scheme.in;
+                if (scheme.name) enrichedReq[schemeName].name = scheme.name;
+                
+                const scopesArr = scopes as string[];
+                if (scopesArr && scopesArr.length > 0) {
+                  enrichedReq[schemeName].scopes = scopesArr;
+                }
+              } else {
+                enrichedReq[schemeName] = { scopes };
+              }
+            }
+            return enrichedReq;
+          });
+        }
+      }
+
+      // Determine Execution Mode
+      let executionMode = EXECUTION_MODE_SYNC;
+      if (isWebhook || op.callbacks) {
+        executionMode = EXECUTION_MODE_ASYNC;
+      } else if (op.responses) {
+        for (const respCode of Object.keys(op.responses)) {
+          if (respCode.startsWith('202')) {
+            executionMode = EXECUTION_MODE_ASYNC;
+            break;
+          }
+        }
+      }
+
       // EXECUTION section (mandatory) - v2.0.2 requires KIND
       methodDef.EXECUTION = {
         KIND: 'http',
-        MODE: EXECUTION_MODE_SYNC, // REST APIs are synchronous request/response
+        MODE: executionMode,
       };
 
       // INPUTS section (optional)
@@ -639,7 +741,8 @@ function renameMethodsToCanonicalId(methods: Record<string, any>): Record<string
   const renamed: Record<string, any> = {};
   for (const [oldId, methodData] of Object.entries<any>(methods)) {
     const canonicalId: string | undefined = methodData.CANONICAL_ID;
-    const key = canonicalId || oldId;
+    let key = canonicalId || oldId;
+    key = key.replace(/-/g, '_');
     renamed[key] = methodData;
   }
   return renamed;
@@ -658,14 +761,16 @@ function generateWrekenfile(spec: any, baseDir: string): string {
     const structs = extractStructs(spec, resolver);
 
     // Resolve canonical IDs for all methods
-    const canonicalInputs: MethodCanonicalInput[] = Object.entries(methods).map(
-      ([methodId, methodData]) => ({
-        methodId,
-        httpMethod: methodData.HTTP?.METHOD,
-        endpoint: methodData.HTTP?.ENDPOINT,
-        existingCanonicalId: methodData.CANONICAL_ID,
-      })
-    );
+    const canonicalInputs: MethodCanonicalInput[] = Object.entries(methods)
+      .map(
+        ([methodId, methodData]) => ({
+          methodId,
+          httpMethod: methodData.HTTP?.METHOD,
+          endpoint: methodData.HTTP?.ENDPOINT,
+          existingCanonicalId: methodData.CANONICAL_ID,
+        })
+      )
+      .sort((a, b) => a.methodId.localeCompare(b.methodId));
     const libraryName = spec?.info?.['x-swytchcode-namespace'] || spec?.info?.title || 'unknown';
     const canonicalIdMap = resolveCanonicalIds(canonicalInputs, libraryName);
 

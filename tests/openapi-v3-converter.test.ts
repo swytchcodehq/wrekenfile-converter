@@ -78,7 +78,7 @@ describe('OpenAPI v3 → Wrekenfile converter', () => {
 
     // Pet and NewPet schemas should produce structs
     const structNames = Object.keys(parsed.STRUCTS);
-    expect(structNames.length).toBeGreaterThanOrEqual(1);
+    expect(structNames.length).toBeGreaterThan(0);
   });
 
   it('includes SUMMARY for methods', () => {
@@ -100,10 +100,9 @@ describe('OpenAPI v3 → Wrekenfile converter', () => {
       (m) => m.HTTP?.METHOD === 'GET' && m.HTTP?.ENDPOINT?.includes('/pets') && !m.HTTP?.ENDPOINT?.includes('{')
     );
     expect(listPets).toBeDefined();
-    if (listPets?.INPUTS) {
-      // limit parameter should exist somewhere in inputs
-      expect(listPets.INPUTS.length).toBeGreaterThan(0);
-    }
+    expect(listPets.INPUTS).toBeDefined();
+    // limit parameter should exist somewhere in inputs
+    expect(listPets.INPUTS.length).toBeGreaterThan(0);
   });
 
   it('includes error responses', () => {
@@ -114,8 +113,39 @@ describe('OpenAPI v3 → Wrekenfile converter', () => {
     const createPet = Object.values<any>(parsed.METHODS).find(
       (m) => m.HTTP?.METHOD === 'POST' && m.HTTP?.ENDPOINT?.includes('/pets')
     );
-    if (createPet?.ERRORS) {
-      expect(createPet.ERRORS.length).toBeGreaterThan(0);
-    }
+    expect(createPet).toBeDefined();
+    expect(createPet.ERRORS).toBeDefined();
+    expect(createPet.ERRORS.length).toBeGreaterThan(0);
+  });
+
+  it('correctly maps 4XX and 5XX wildcard error response keys to 400 and 500 status codes', () => {
+    const wildcardSpec = {
+      openapi: '3.0.0',
+      info: { title: 'wildcard-api', version: '1.0' },
+      servers: [{ url: 'https://example.com' }],
+      paths: {
+        '/test': {
+          get: {
+            operationId: 'TestWildcards',
+            responses: {
+              '4XX': { description: 'client error' },
+              '5xx': { description: 'server error' },
+              'default': { description: 'unknown error' }
+            }
+          }
+        }
+      }
+    };
+    
+    const result = generateWrekenfile(wildcardSpec, FIXTURES_DIR);
+    const parsed = yamlLoad(result) as any;
+    const errors = Object.values<any>(parsed.METHODS)[0].ERRORS;
+    
+    expect(errors).toBeDefined();
+    expect(errors.length).toBe(3);
+    
+    const statuses = errors.map((e: any) => e.STATUS).sort();
+    // 4XX -> 400, 5xx -> 500, default -> 500
+    expect(statuses).toEqual([400, 500, 500]);
   });
 });

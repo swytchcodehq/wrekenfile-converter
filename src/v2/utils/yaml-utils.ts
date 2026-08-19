@@ -44,9 +44,7 @@ export function cleanYaml(yamlString: string): string {
     }
     
     filteredLines.push(line);
-    if (trimmed !== '') {
-      isFirstLine = false;
-    }
+    isFirstLine = false;
   }
   
   cleaned = filteredLines.join(NEWLINE)

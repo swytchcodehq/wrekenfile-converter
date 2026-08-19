@@ -99,13 +99,67 @@ export function filterStructsByUsage(wrekenfile: any): void {
   }
 
   // Rebuild STRUCTS with only used entries
-  const filtered: Record<string, any[]> = {};
-  for (const [name, def] of Object.entries<any[]>(structs)) {
-    if (used.has(name)) {
-      filtered[name] = def;
+  for (const name of Object.keys(structs)) {
+    if (!used.has(name)) {
+      delete structs[name];
     }
   }
 
-  wrekenfile.STRUCTS = filtered;
-}
+  // Second pass: Replace any remaining dangling refs in methods with ANY
+  const replaceDangling = (typeStr: any): any => {
+    if (!typeStr || typeof typeStr !== 'string') return typeStr;
+    const referenced = extractAllStructNames(typeStr);
+    for (const ref of referenced) {
+      if (ref && !structs[ref]) {
+        return 'ANY';
+      }
+    }
+    return typeStr;
+  };
 
+  if (wrekenfile.METHODS) {
+    for (const methodData of Object.values<any>(wrekenfile.METHODS)) {
+      if (Array.isArray(methodData.INPUTS)) {
+        for (const input of methodData.INPUTS) {
+          if (input && typeof input === 'object') {
+            for (const [key, value] of Object.entries<any>(input)) {
+              if (typeof value === 'string') {
+                input[key] = replaceDangling(value);
+              } else if (value && typeof value === 'object' && value.TYPE) {
+                value.TYPE = replaceDangling(value.TYPE);
+              }
+            }
+          }
+        }
+      }
+      if (Array.isArray(methodData.RETURNS)) {
+        for (const ret of methodData.RETURNS) {
+          if (ret.RETURNTYPE) ret.RETURNTYPE = replaceDangling(ret.RETURNTYPE);
+        }
+      }
+      if (Array.isArray(methodData.ERRORS)) {
+        for (const err of methodData.ERRORS) {
+          if (err.TYPE) err.TYPE = replaceDangling(err.TYPE);
+        }
+      }
+      if (methodData.HTTP && methodData.HTTP.BODY && methodData.HTTP.BODY.TYPE) {
+        methodData.HTTP.BODY.TYPE = replaceDangling(methodData.HTTP.BODY.TYPE);
+      }
+      if (methodData.ASYNC && methodData.ASYNC.RESULT && methodData.ASYNC.RESULT.TYPE) {
+        methodData.ASYNC.RESULT.TYPE = replaceDangling(methodData.ASYNC.RESULT.TYPE);
+      }
+    }
+  }
+
+  for (const fields of Object.values<any[]>(structs)) {
+    if (Array.isArray(fields)) {
+      for (const field of fields) {
+        if (field.TYPE) {
+          field.TYPE = replaceDangling(field.TYPE);
+        }
+      }
+    }
+  }
+
+  wrekenfile.STRUCTS = structs;
+}

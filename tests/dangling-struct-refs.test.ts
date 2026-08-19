@@ -266,4 +266,55 @@ describe('dangling STRUCT reference regressions', () => {
     const out = generateWrekenfile(spec, path.dirname(specPath));
     expect(collectDanglingRefs(out)).toEqual([]);
   });
+
+  it('correctly sanitizes struct names for query parameters with hyphens', () => {
+    const spec = {
+      openapi: '3.0.0',
+      info: { title: 't', version: '1' },
+      paths: {
+        '/test': {
+          get: {
+            operationId: 'getTest',
+            parameters: [
+              {
+                in: 'query',
+                name: 'with-fields',
+                schema: {
+                  type: 'object',
+                  properties: {
+                    field1: { type: 'string' }
+                  }
+                }
+              }
+            ],
+            responses: {
+              '200': { description: 'ok' },
+            },
+          },
+        },
+      },
+    };
+
+    const out = generateWrekenfile(spec, __dirname);
+    expect(collectDanglingRefs(out)).toEqual([]);
+    const parsed = yamlLoad(out) as any;
+    
+    // The query parameter 'with-fields' should generate an input named 'with-fields'
+    const methodKeys = Object.keys(parsed.METHODS);
+    const inputs = parsed.METHODS[methodKeys[0]].INPUTS;
+    const withFieldsInput = inputs.find((i: any) => i['with-fields']);
+    expect(withFieldsInput).toBeDefined();
+    
+    // The TYPE should be a STRUCT reference containing underscores instead of hyphens
+    const typeStr = withFieldsInput['with-fields'].TYPE;
+    expect(typeStr).toContain('STRUCT(');
+    expect(typeStr).not.toContain('-'); // the hyphen should be sanitized
+    
+    // And it should exist in STRUCTS
+    const structNameMatch = typeStr.match(/STRUCT\(([^)]+)\)/);
+    expect(structNameMatch).toBeDefined();
+    if (structNameMatch) {
+      expect(parsed.STRUCTS[structNameMatch[1]]).toBeDefined();
+    }
+  });
 });

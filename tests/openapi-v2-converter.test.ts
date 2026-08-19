@@ -36,12 +36,10 @@ describe('OpenAPI v2 (Swagger) → Wrekenfile converter', () => {
     const result = generateWrekenfile(spec, FIXTURES_DIR);
     const parsed = yamlLoad(result) as any;
     // Should have a base URL default
-    if (parsed.DEFAULTS) {
-      const baseUrl = parsed.DEFAULTS.w_base_url || parsed.DEFAULTS.base_url;
-      if (baseUrl) {
-        expect(baseUrl).toContain('petstore.com');
-      }
-    }
+    expect(parsed.DEFAULTS).toBeDefined();
+    const baseUrl = parsed.DEFAULTS.w_base_url || parsed.DEFAULTS.base_url;
+    expect(baseUrl).toBeDefined();
+    expect(baseUrl).toContain('petstore.com');
   });
 
   it('generates CANONICAL_ID for each method', () => {

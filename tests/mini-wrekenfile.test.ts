@@ -55,9 +55,8 @@ describe('Mini-Wrekenfile generator', () => {
     const minis = generateMiniWrekenfiles(wrekenfileContent);
     for (const mini of minis) {
       const parsed = yamlLoad(mini.content) as any;
-      if (parsed.METHODS) {
-        expect(Object.keys(parsed.METHODS).length).toBe(1);
-      }
+      expect(parsed.METHOD).toBeDefined();
+      expect(parsed.METHOD.ID).toBeDefined();
     }
   });
 
