@@ -761,14 +761,16 @@ function generateWrekenfile(spec: any, baseDir: string): string {
     const structs = extractStructs(spec, resolver);
 
     // Resolve canonical IDs for all methods
-    const canonicalInputs: MethodCanonicalInput[] = Object.entries(methods).map(
-      ([methodId, methodData]) => ({
-        methodId,
-        httpMethod: methodData.HTTP?.METHOD,
-        endpoint: methodData.HTTP?.ENDPOINT,
-        existingCanonicalId: methodData.CANONICAL_ID,
-      })
-    );
+    const canonicalInputs: MethodCanonicalInput[] = Object.entries(methods)
+      .map(
+        ([methodId, methodData]) => ({
+          methodId,
+          httpMethod: methodData.HTTP?.METHOD,
+          endpoint: methodData.HTTP?.ENDPOINT,
+          existingCanonicalId: methodData.CANONICAL_ID,
+        })
+      )
+      .sort((a, b) => a.methodId.localeCompare(b.methodId));
     const libraryName = spec?.info?.['x-swytchcode-namespace'] || spec?.info?.title || 'unknown';
     const canonicalIdMap = resolveCanonicalIds(canonicalInputs, libraryName);
 
