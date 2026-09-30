@@ -283,8 +283,13 @@ function getHeadersForOperation(op: any, spec: any): Record<string, string>[] {
   // Add Content-Type header
   headerMap.set('Content-Type', contentType);
   
-  // Add security headers based on the operation's security requirements
-  const security = op.security || spec.security || [];
+  // Add security headers based on the operation's security requirements.
+  // Entries in `security` are alternatives (any one satisfies it); only the
+  // schemes inside one entry are combined. Use the first entry only: emitting
+  // every alternative sends extra auth headers with placeholder values, which
+  // some APIs reject even next to a valid credential (CreateOS answers 401 to a
+  // valid X-Api-Key sent with X-Auth-Token: x-auth-token).
+  const security = (op.security || spec.security || []).slice(0, 1);
   
   for (const securityRequirement of security) {
     for (const [schemeName, _scopes] of Object.entries(securityRequirement)) {
