@@ -189,8 +189,8 @@ export const AUTH_HEADER_X_SIGNATURE = 'x-signature';
  * Authentication template constants (for DEFAULTS section)
  * These are the placeholder values used in the generated Wrekenfile DEFAULTS section
  */
-export const AUTH_TEMPLATE_BEARER = 'BEARER <TOKEN>';
-export const AUTH_TEMPLATE_BEARER_ACCESS = 'BEARER <ACCESS_TOKEN>';
+export const AUTH_TEMPLATE_BEARER = 'Bearer <TOKEN>';
+export const AUTH_TEMPLATE_BEARER_ACCESS = 'Bearer <ACCESS_TOKEN>';
 export const AUTH_TEMPLATE_BASIC = 'Basic <BASE64>';
 export const AUTH_TEMPLATE_DIGEST = 'Digest <CREDENTIALS>';
 export const AUTH_TEMPLATE_ID_TOKEN = 'ID_TOKEN <JWT>';

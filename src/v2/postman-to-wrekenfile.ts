@@ -15,9 +15,8 @@ import {
   CONTENT_TYPE_FORM_DATA,
   CONTENT_TYPE_URLENCODED,
   HEADER_CONTENT_TYPE,
-  AUTH_BEARER_TOKEN,
-  AUTH_API_KEY,
   AUTH_SIGNATURE,
+  AUTH_TEMPLATE_SIGNATURE,
   AUTH_HEADER_X_API_KEY,
   AUTH_HEADER_AUTHORIZATION,
   AUTH_HEADER_X_SIGNATURE,
@@ -30,6 +29,17 @@ import { Primitive } from './utils/type-utils';
 import { validatePostmanCollection, logError, createConverterError } from './utils/error-utils';
 import { resolveCanonicalIds, computeCanonicalId, type MethodCanonicalInput } from './utils/canonical-id';
 import { filterStructsByUsage } from './utils/struct-utils';
+import {
+  type AuthPlacement,
+  authorizationValuePlacement,
+  credentialInputs,
+  effectivePostmanAuth,
+  emptyAuthPlacement,
+  mergeAuthPlacement,
+  openApiSchemePlacement,
+  postmanAuthPlacement,
+} from './utils/auth-utils';
+import { isMediaType } from './utils/media-type-utils';
 
 function mapType(value: any): Primitive {
   if (typeof value === 'string') {
@@ -317,9 +327,9 @@ function getContentTypeAndBodyType(request: any): { contentType: string; bodyTyp
   }
   
   let bodyType = BODYTYPE_RAW;
-  if (contentType === CONTENT_TYPE_FORM_DATA) {
+  if (isMediaType(contentType, CONTENT_TYPE_FORM_DATA)) {
     bodyType = 'form-data';
-  } else if (contentType === CONTENT_TYPE_URLENCODED) {
+  } else if (isMediaType(contentType, CONTENT_TYPE_URLENCODED)) {
     bodyType = 'x-www-form-urlencoded';
   }
   
@@ -348,37 +358,48 @@ function getAcceptContentType(item: any): string {
   return CONTENT_TYPE_JSON;
 }
 
-function getHeadersForOperation(request: any, variables: Record<string, string>): Record<string, string> {
+/**
+ * Where a request's credential goes: the Auth tab that applies to it (its own,
+ * else the nearest folder's, else the collection's), overridden by any
+ * credential header set explicitly on the request. Header values are DEFAULTS
+ * keys, never the literal credential (see auth-utils).
+ */
+function getRequestAuth(request: any, ancestorAuths: any[]): AuthPlacement {
+  const auth = emptyAuthPlacement();
+  const tab = effectivePostmanAuth(request.auth, ancestorAuths);
+  if (tab) mergeAuthPlacement(auth, postmanAuthPlacement(tab));
+
+  for (const header of request.header || []) {
+    if (!header || header.disabled || !header.key) continue;
+    const key = String(header.key).toLowerCase();
+    let explicit: AuthPlacement | undefined;
+    if (key === AUTH_HEADER_AUTHORIZATION) {
+      explicit = authorizationValuePlacement(header.value);
+    } else if (key === AUTH_HEADER_X_API_KEY) {
+      explicit = openApiSchemePlacement({ type: 'apiKey', in: 'header', name: header.key });
+    } else if (key === AUTH_HEADER_X_SIGNATURE) {
+      explicit = { headers: { [header.key]: AUTH_SIGNATURE }, params: [], defaults: { [AUTH_SIGNATURE]: AUTH_TEMPLATE_SIGNATURE } };
+    }
+    if (!explicit) continue;
+    // An explicit header replaces the Auth tab's value for the same header.
+    for (const existing of Object.keys(auth.headers)) {
+      if (existing.toLowerCase() === key) delete auth.headers[existing];
+    }
+    mergeAuthPlacement(auth, explicit);
+  }
+  return auth;
+}
+
+function getHeadersForOperation(request: any, auth: AuthPlacement): Record<string, string> {
   const { contentType } = getContentTypeAndBodyType(request);
-  const headerMap = new Map<string, string>();
+  const headers: Record<string, string> = {};
   
   // Add Content-Type header for POST/PUT/PATCH requests
   if (HTTP_METHODS_WITH_BODY.includes(request.method?.toLowerCase() || '')) {
-    headerMap.set(HEADER_CONTENT_TYPE, contentType);
+    headers[HEADER_CONTENT_TYPE] = contentType;
   }
   
-  // Add authentication headers
-  const authHeaders = request.header || [];
-  for (const header of authHeaders) {
-    if (header.key && header.value) {
-      const key = header.key.toLowerCase();
-      if (key === AUTH_HEADER_X_API_KEY || key === AUTH_HEADER_AUTHORIZATION || key === AUTH_HEADER_X_SIGNATURE) {
-        let value = resolveVariables(header.value, variables);
-        if (key === AUTH_HEADER_X_API_KEY) value = AUTH_API_KEY;
-        else if (key === AUTH_HEADER_AUTHORIZATION) value = AUTH_BEARER_TOKEN;
-        else if (key === AUTH_HEADER_X_SIGNATURE) value = AUTH_SIGNATURE;
-        
-        headerMap.set(header.key, value);
-      }
-    }
-  }
-  
-  // Convert Map to object
-  const headers: Record<string, string> = {};
-  for (const [key, value] of headerMap.entries()) {
-    headers[key] = value;
-  }
-  
+  Object.assign(headers, auth.headers);
   return headers;
 }
 
@@ -441,9 +462,9 @@ function extractParameters(request: any, _variables: Record<string, string>): an
       if (header.disabled) {
         continue;
       }
-      // Skip Content-Type and Authorization - they're in HTTP.HEADERS
+      // Skip Content-Type and credential headers - they're in HTTP.HEADERS
       const headerKey = header.key?.toLowerCase();
-      if (headerKey === 'content-type' || headerKey === 'authorization') {
+      if (headerKey === 'content-type' || headerKey === AUTH_HEADER_AUTHORIZATION || headerKey === AUTH_HEADER_X_API_KEY || headerKey === AUTH_HEADER_X_SIGNATURE) {
         continue;
       }
       const isRequired = !header.disabled;
@@ -602,7 +623,7 @@ function extractErrors(item: any, _itemName: string, _method: string, _path: str
   return errors;
 }
 
-function extractOperations(collection: any, variables: Record<string, string>): any[] {
+function extractOperations(collection: any, variables: Record<string, string>, authDefaults: Record<string, string> = {}): any[] {
   const operations: any[] = [];
   const operationNameCount: Record<string, number> = {};
 
@@ -616,7 +637,7 @@ function extractOperations(collection: any, variables: Record<string, string>): 
     }
   }
   
-  function processItem(item: any, parentName: string | null = null) {
+  function processItem(item: any, parentName: string | null = null, ancestorAuths: any[] = []) {
     if (item.request) {
       const method = item.request.method || HTTP_METHOD_GET;
       const url = item.request.url;
@@ -628,8 +649,13 @@ function extractOperations(collection: any, variables: Record<string, string>): 
       
       const summary = generateSummary(item, method, path);
       const { contentType, bodyType } = getContentTypeAndBodyType(item.request);
-      const headers = getHeadersForOperation(item.request, variables);
-      const inputs = extractParameters(item.request, variables);
+      const auth = getRequestAuth(item.request, ancestorAuths);
+      for (const [k, v] of Object.entries(auth.defaults)) {
+        if (!(k in authDefaults)) authDefaults[k] = v;
+      }
+      const headers = getHeadersForOperation(item.request, auth);
+      const extracted = extractParameters(item.request, variables);
+      const inputs = [...extracted, ...credentialInputs(auth, extracted)];
       const bodyInputs = extractRequestBody(item.request, itemName, method, path);
       const returns = extractResponses(item, itemName, method, path);
       const errors = extractErrors(item, itemName, method, path);
@@ -712,12 +738,12 @@ function extractOperations(collection: any, variables: Record<string, string>): 
     }
     if (item.item) {
       for (const subItem of item.item) {
-        processItem(subItem, item.name || parentName || null);
+        processItem(subItem, item.name || parentName || null, [item.auth, ...ancestorAuths]);
       }
     }
   }
   for (const item of collection.item) {
-    processItem(item, null);
+    processItem(item, null, [collection.auth]);
   }
   return operations;
 }
@@ -816,7 +842,8 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
     const allVariables = { ...collectionVars, ...variables };
     
     const structs = extractStructs(collection, allVariables);
-    const operations = extractOperations(collection, allVariables);
+    const authDefaults: Record<string, string> = {};
+    const operations = extractOperations(collection, allVariables, authDefaults);
     
     const wrekenfile: any = {
       VERSION: WREKENFILE_VERSION,
@@ -847,6 +874,12 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
       }
     }
     
+    // Every key an auth header references must exist in DEFAULTS (see
+    // auth-utils). A collection variable of the same name wins.
+    for (const [key, value] of Object.entries(authDefaults)) {
+      if (!(key in defaults)) defaults[key] = value;
+    }
+
     if (Object.keys(defaults).length > 0) {
       wrekenfile.DEFAULTS = defaults;
     }

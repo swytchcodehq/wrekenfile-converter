@@ -59,7 +59,7 @@ INIT:
     - userid: 1
     - cartid: 1
     - amount: 100.00
-    - bearer_token: "BEARER abcd"
+    - bearer_token: "Bearer abcd"
     - some_val: "SOME VALUE"
 
 
@@ -309,7 +309,7 @@ INIT:
         - userid: 1
         - cartid: 1
         - amount: 100.00
-        - bearer_token: "BEARER abcd"
+        - bearer_token: "Bearer abcd"
         - some_val: "SOME VALUE"
 
     EXT:

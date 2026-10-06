@@ -1,6 +1,8 @@
 import { extractRefName, sanitizeName } from "./ref-utils";
 import { RefResolver } from './ref-utils';
 import { mapOpenApiType as mapType } from './type-utils';
+import { findJsonContent } from './media-type-utils';
+import { getPathLikeObjects, mergeParameters } from './openapi-utils';
 
 /**
  * Shared utility for determining if a schema should be emitted/extracted as a STRUCT.
@@ -379,8 +381,6 @@ export function getErrorStructName(rawResponse: any, op: any, code: string): str
   return `${opId}_Error${code}`;
 }
 
-const CONTENT_TYPE_JSON = 'application/json';
-
 export function extractStructs(spec: any, resolver: RefResolver): Record<string, any[]> {
   const structs: Record<string, any[]> = {};
   const schemas = spec.components?.schemas || spec.definitions || {};
@@ -430,7 +430,7 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
   const componentResponses = spec.components?.responses || spec.responses || {};
   for (const [key, rawResp] of Object.entries<any>(componentResponses)) {
     if (!rawResp) continue;
-    const jsonContent = rawResp.content?.[CONTENT_TYPE_JSON] || rawResp; // v3 vs v2
+    const jsonContent = rawResp.content ? findJsonContent(rawResp.content)?.media : rawResp; // v3 vs v2
     const schema = jsonContent?.schema;
     if (!schema) continue;
     const safeKey = sanitizeName(key);
@@ -443,16 +443,8 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
     }
   }
   
-  // Combine paths and webhooks (OpenAPI 3.1)
-  const pathLikeObjects: Array<{ pathStr: string, methods: any }> = [];
-  if (spec.paths && typeof spec.paths === 'object') {
-    pathLikeObjects.push(...Object.entries<any>(spec.paths).map(([k, v]) => ({ pathStr: k, methods: v })));
-  }
-  if (spec.webhooks && typeof spec.webhooks === 'object') {
-    pathLikeObjects.push(...Object.entries<any>(spec.webhooks).map(([k, v]) => ({ pathStr: k, methods: v })));
-  }
-
-  for (const { pathStr, methods } of pathLikeObjects) {
+  // Same operations the converters emit (webhooks only for webhook-only specs)
+  for (const { pathStr, pathMethods: methods } of getPathLikeObjects(spec)) {
     for (const [method, op] of Object.entries<any>(methods)) {
         if (!['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'].includes(method.toLowerCase())) continue;
         const operationId = op.operationId || `${method}-${pathStr.replace(/[\/{}]/g, '-')}`;
@@ -468,9 +460,7 @@ export function extractStructs(spec: any, resolver: RefResolver): Record<string,
             if (content?.schema) reqBodySchemas.push(content.schema);
           }
         }
-        const pathLevelParams = methods.parameters || [];
-        const opParams = op.parameters || [];
-        const allParams = [...pathLevelParams, ...opParams];
+        const allParams = mergeParameters(methods.parameters, op.parameters, resolver);
         
         if (allParams.length > 0) {
           for (let p of allParams) {

@@ -507,7 +507,7 @@ function extractSecurityDefaults(spec: any): any[] {
   for (const [_name, scheme] of Object.entries<any>(securitySchemes)) {
     if (scheme.type === 'http') {
       if (scheme.scheme === 'bearer') {
-      defs.push({ bearer_token: 'BEARER <TOKEN>' });
+      defs.push({ bearer_token: 'Bearer <TOKEN>' });
       } else if (scheme.scheme === 'basic') {
         defs.push({ basic_auth: 'Basic <BASE64>' });
       } else if (scheme.scheme === 'digest') {
@@ -524,7 +524,7 @@ function extractSecurityDefaults(spec: any): any[] {
         defs.push({ [`cookie_${scheme.name.toLowerCase()}`]: `<${scheme.name.toUpperCase()}>` });
       }
     } else if (scheme.type === 'oauth2') {
-      defs.push({ bearer_token: 'BEARER <ACCESS_TOKEN>' });
+      defs.push({ bearer_token: 'Bearer <ACCESS_TOKEN>' });
     } else if (scheme.type === 'openIdConnect') {
       defs.push({ id_token: 'ID_TOKEN <JWT>' });
     }

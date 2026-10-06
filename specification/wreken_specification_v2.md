@@ -290,7 +290,34 @@ Informational only.
 ```yaml
 DEFAULTS:
   w_base_url: https://api.example.com
+  bearer_token: Bearer <TOKEN>
 ```
+
+### Auth header references
+
+An auth header's value in `HTTP.HEADERS` is the name of a `DEFAULTS` key, never a
+literal credential. The `DEFAULTS` entry holds a placeholder template showing the
+expected format:
+
+```yaml
+DEFAULTS:
+  bearer_token: Bearer <TOKEN>   # Authorization scheme is "Bearer", not "BEARER"
+  x-api-key: <X-API-KEY>
+METHODS:
+  example.thing.get:
+    HTTP:
+      HEADERS:
+        Authorization: bearer_token
+        X-API-Key: x-api-key
+```
+
+- Every key a header references must exist in `DEFAULTS`.
+- Runtimes must not send a referenced value as-is; they substitute the real credential
+  or omit the header.
+- Credentials sent in the query or a cookie (`apiKey` with `in: query` / `in: cookie`)
+  appear as an optional `LOCATION: query` / `LOCATION: cookie` input and in `SECURITY`,
+  not in `HEADERS`. A runtime sends `LOCATION: cookie` inputs as `Cookie` header pairs
+  and never in the URL.
 
 ---
 

@@ -16,19 +16,12 @@ import {
   CONTENT_TYPE_FORM_DATA,
   CONTENT_TYPE_URLENCODED,
   HEADER_CONTENT_TYPE,
-  HEADER_AUTHORIZATION,
-  AUTH_BEARER_TOKEN,
-  AUTH_BASIC_AUTH,
-  AUTH_DIGEST_AUTH,
-  AUTH_ID_TOKEN,
-  AUTH_TEMPLATE_BEARER,
-  AUTH_TEMPLATE_BEARER_ACCESS,
-  AUTH_TEMPLATE_BASIC,
-  AUTH_TEMPLATE_DIGEST,
-  AUTH_TEMPLATE_ID_TOKEN,
   HTTP_METHODS_WITH_BODY,
 } from './utils/constants';
-import { generateReturnVarName, generateErrorWhen } from './utils/response-utils';
+import { generateReturnVarName, generateErrorWhen, detectPagination } from './utils/response-utils';
+import { type AuthPlacement, operationAuth, credentialInputs, allSchemesDefaults } from './utils/auth-utils';
+import { findJsonContent, isJsonMediaType, isMediaType } from './utils/media-type-utils';
+import { mergeParameters, resolveServerUrl, getPathLikeObjects } from './utils/openapi-utils';
 import { generateOpenApiSummary } from './utils/summary-utils';
 import { validateOpenApiV3Spec, validateBaseDir, logError, createConverterError } from './utils/error-utils';
 import { resolveCanonicalIds, type MethodCanonicalInput } from './utils/canonical-id';
@@ -57,22 +50,23 @@ function resolveContentType(requestBody: any): string | undefined {
   const contentTypes = Object.keys(requestBody.content);
   if (contentTypes.length === 0) return undefined;
 
-  let contentType = [CONTENT_TYPE_JSON, 'multipart/form-data', 'application/x-www-form-urlencoded']
-    .find((ct) => contentTypes.includes(ct) && requestBody.content[ct]?.schema);
-    
-  if (!contentType) {
-    contentType = contentTypes[0];
-  }
-  return contentType;
+  const hasSchema = (ct: string) => !!requestBody.content[ct]?.schema;
+  const json = findJsonContent(requestBody.content);
+  if (json && json.media?.schema) return json.mediaType;
+  return (
+    contentTypes.find((ct) => isMediaType(ct, CONTENT_TYPE_FORM_DATA) && hasSchema(ct)) ||
+    contentTypes.find((ct) => isMediaType(ct, CONTENT_TYPE_URLENCODED) && hasSchema(ct)) ||
+    contentTypes[0]
+  );
 }
 
 function getContentTypeAndBodyType(op: any): { contentType: string; bodyType: string } {
   const contentType = resolveContentType(op.requestBody) || CONTENT_TYPE_JSON;
   
   let bodyType = BODYTYPE_RAW;
-  if (contentType === CONTENT_TYPE_FORM_DATA) {
+  if (isMediaType(contentType, CONTENT_TYPE_FORM_DATA)) {
     bodyType = 'form-data';
-  } else if (contentType === CONTENT_TYPE_URLENCODED) {
+  } else if (isMediaType(contentType, CONTENT_TYPE_URLENCODED)) {
     bodyType = 'x-www-form-urlencoded';
   }
 
@@ -86,7 +80,7 @@ function getAcceptContentType(op: any): string {
     if (statusCode >= 200 && statusCode < 300 && response.content) {
       const contentTypes = Object.keys(response.content);
       if (contentTypes.length > 0) {
-        return contentTypes.includes(CONTENT_TYPE_JSON) ? CONTENT_TYPE_JSON : contentTypes[0];
+        return findJsonContent(response.content)?.mediaType ?? contentTypes[0];
       }
     }
   }
@@ -94,72 +88,17 @@ function getAcceptContentType(op: any): string {
   return CONTENT_TYPE_JSON;
 }
 
-function getHeadersForOperation(op: any, spec: any, method?: string, resolver?: RefResolver): Record<string, string> {
+function getHeadersForOperation(op: any, auth: AuthPlacement, method?: string): Record<string, string> {
   const { contentType } = getContentTypeAndBodyType(op);
-  
-  // Use a Map to prevent duplicate headers
-  const headerMap = new Map<string, string>();
-  
+  const headers: Record<string, string> = {};
+
   // Add Content-Type header for POST/PUT/PATCH requests
   const httpMethod = method?.toLowerCase() || op.method?.toLowerCase() || '';
   if (HTTP_METHODS_WITH_BODY.includes(httpMethod)) {
-    headerMap.set(HEADER_CONTENT_TYPE, contentType);
+    headers[HEADER_CONTENT_TYPE] = contentType;
   }
-  
-  // Add security headers based on the operation's security requirements.
-  // Entries in `security` are alternatives (any one satisfies it); only the
-  // schemes inside one entry are combined. Use the first entry only: emitting
-  // every alternative sends extra auth headers with placeholder values, which
-  // some APIs reject even next to a valid credential (CreateOS answers 401 to a
-  // valid X-Api-Key sent with X-Auth-Token: x-auth-token).
-  const security = (op.security || spec.security || []).slice(0, 1);
-  
-  for (const securityRequirement of security) {
-    for (const [schemeName, _scopes] of Object.entries(securityRequirement)) {
-      const scheme = spec.components?.securitySchemes?.[schemeName];
-      if (scheme) {
-        if (scheme.type === 'http') {
-          if (scheme.scheme === 'bearer') {
-            headerMap.set(HEADER_AUTHORIZATION, AUTH_BEARER_TOKEN);
-          } else if (scheme.scheme === 'basic') {
-            headerMap.set(HEADER_AUTHORIZATION, AUTH_BASIC_AUTH);
-          } else if (scheme.scheme === 'digest') {
-            headerMap.set(HEADER_AUTHORIZATION, AUTH_DIGEST_AUTH);
-          } else {
-            headerMap.set(HEADER_AUTHORIZATION, `<${scheme.scheme}_auth>`);
-          }
-        } else if (scheme.type === 'apiKey') {
-          if (scheme.in === 'header') {
-            headerMap.set(scheme.name, scheme.name.toLowerCase());
-          }
-        } else if (scheme.type === 'oauth2') {
-          headerMap.set(HEADER_AUTHORIZATION, AUTH_BEARER_TOKEN);
-        } else if (scheme.type === 'openIdConnect') {
-          headerMap.set(HEADER_AUTHORIZATION, AUTH_ID_TOKEN);
-        }
-      }
-    }
-  }
-  
-  // Check if Authorization is used as a parameter but not defined in securitySchemes
-  if (op.parameters) {
-    for (let param of op.parameters) {
-      // Resolve $ref if present
-      if (param && typeof param === 'object' && param.$ref) {
-        param = resolver ? resolver.resolveRef(param.$ref) : param;
-      }
-      if (param && typeof param === 'object' && param.in === 'header' && param.name === HEADER_AUTHORIZATION && !headerMap.has(HEADER_AUTHORIZATION)) {
-        headerMap.set(HEADER_AUTHORIZATION, AUTH_BEARER_TOKEN);
-      }
-    }
-  }
-  
-  // Convert Map to object
-  const headers: Record<string, string> = {};
-  for (const [key, value] of headerMap.entries()) {
-    headers[key] = value;
-  }
-  
+
+  Object.assign(headers, auth.headers);
   return headers;
 }
 
@@ -237,7 +176,9 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
     return inputParams;
   }
 
-  if (contentType === CONTENT_TYPE_JSON || (!['multipart/form-data', 'application/x-www-form-urlencoded'].includes(contentType))) {
+  const isMultipart = isMediaType(contentType, CONTENT_TYPE_FORM_DATA);
+  const isUrlencoded = isMediaType(contentType, CONTENT_TYPE_URLENCODED);
+  if (isJsonMediaType(contentType) || (!isMultipart && !isUrlencoded)) {
     const bodyObj = requestBody.content[contentType];
     const bodySchema = bodyObj?.schema;
     let type: string;
@@ -273,7 +214,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
       applyConstraints(inputParam.body, bodySchema);
     }
     inputParams.push(inputParam);
-  } else if (contentType === 'multipart/form-data' && requestBody.content[contentType]?.schema) {
+  } else if (isMultipart && requestBody.content[contentType]?.schema) {
     const bodySchema = requestBody.content[contentType].schema;
     if (bodySchema && bodySchema.properties) {
       for (const [key, prop] of Object.entries<any>(bodySchema.properties)) {
@@ -310,7 +251,7 @@ function extractRequestBody(op: any, operationId: string, method: string, path: 
         inputParams.push(inputParam);
       }
     }
-  } else if (contentType === 'application/x-www-form-urlencoded' && requestBody.content[contentType]?.schema) {
+  } else if (isUrlencoded && requestBody.content[contentType]?.schema) {
     const bodySchema = requestBody.content[contentType].schema;
     if (bodySchema && bodySchema.properties) {
       for (const [key, prop] of Object.entries<any>(bodySchema.properties)) {
@@ -379,8 +320,8 @@ function extractResponses(op: any, operationId: string, method: string, path: st
       continue;
     }
 
+    const jsonContent = findJsonContent(content)?.media;
     if (content) {
-      const jsonContent = content[CONTENT_TYPE_JSON];
       if (jsonContent?.schema) {
         const schema = jsonContent.schema;
         // Use getTypeFromSchema to handle arrays, $refs, and inline schemas correctly
@@ -422,32 +363,12 @@ function extractResponses(op: any, operationId: string, method: string, path: st
       };
 
       // Check for pagination hints in response schema
-      if (content) {
-        const jsonContent = content[CONTENT_TYPE_JSON];
-        if (jsonContent?.schema) {
-          const schema = jsonContent.schema;
-          const resolvedSchema = schema.$ref ? resolver.resolveRef(schema.$ref) : schema;
-          if (resolvedSchema && resolvedSchema.properties) {
-            // Look for common pagination fields
-            if (resolvedSchema.properties.next_cursor || resolvedSchema.properties.cursor) {
-              returnItem.PAGINATION = {
-                TYPE: 'cursor',
-                CURSOR_FIELD: resolvedSchema.properties.next_cursor ? 'next_cursor' : 'cursor',
-              };
-            } else if (resolvedSchema.properties.offset !== undefined || resolvedSchema.properties.skip !== undefined) {
-              returnItem.PAGINATION = {
-                TYPE: 'offset',
-                OFFSET_FIELD: resolvedSchema.properties.offset !== undefined ? 'offset' : 'skip',
-              };
-            } else if (resolvedSchema.properties.page !== undefined || resolvedSchema.properties.pageNumber !== undefined) {
-              returnItem.PAGINATION = {
-                TYPE: 'page',
-                PAGE_SIZE_FIELD: (resolvedSchema.properties.pageSize !== undefined && resolvedSchema.properties.pageSize !== null) 
-                  ? String(resolvedSchema.properties.pageSize) 
-                  : 'limit',
-              };
-            }
-          }
+      if (jsonContent?.schema) {
+        const schema = jsonContent.schema;
+        const resolvedSchema = schema.$ref ? resolver.resolveRef(schema.$ref) : schema;
+        const pagination = detectPagination(resolvedSchema?.properties);
+        if (pagination) {
+          returnItem.PAGINATION = pagination;
         }
       }
 
@@ -481,7 +402,7 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
       let when = `HTTP ${code}`;
 
       if (content) {
-        const jsonContent = content[CONTENT_TYPE_JSON];
+        const jsonContent = findJsonContent(content)?.media;
         if (jsonContent?.schema) {
           const schema = jsonContent.schema;
           if (schema.$ref) {
@@ -517,20 +438,13 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
   return errors;
 }
 
-function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
+function extractMethods(spec: any, resolver: RefResolver, authDefaults: Record<string, string> = {}): Record<string, any> {
   const methods: Record<string, any> = {};
   
   // Valid HTTP methods
   const validMethods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options', 'trace'];
   
-  // Combine paths and webhooks (OpenAPI 3.1)
-  const pathLikeObjects: Array<{ pathStr: string, pathMethods: any, isWebhook: boolean }> = [];
-  if (spec.paths && typeof spec.paths === 'object') {
-    pathLikeObjects.push(...Object.entries<any>(spec.paths).map(([k, v]) => ({ pathStr: k, pathMethods: v, isWebhook: false })));
-  }
-  if (spec.webhooks && typeof spec.webhooks === 'object') {
-    pathLikeObjects.push(...Object.entries<any>(spec.webhooks).map(([k, v]) => ({ pathStr: k, pathMethods: v, isWebhook: true })));
-  }
+  const pathLikeObjects = getPathLikeObjects(spec);
   
   if (pathLikeObjects.length === 0) {
     return methods;
@@ -556,8 +470,9 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       const summary = generateSummary(op, method, pathStr);
       const endpoint = pathStr;
       
-      // Merge path-level and operation-level parameters (OpenAPI v3)
-      const allParams = [...pathLevelParams, ...(op.parameters || [])];
+      // Merge path-level and operation-level parameters (OpenAPI v3); an
+      // operation parameter overrides a path one with the same name + in.
+      const allParams = mergeParameters(pathLevelParams, op.parameters, resolver);
       
       // Resolve request body early so HTTP metadata extraction sees it
       let resolvedRequestBody = op.requestBody;
@@ -568,10 +483,18 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
       const opWithMergedParams = { ...op, parameters: allParams, requestBody: resolvedRequestBody };
       
       const { contentType, bodyType } = getContentTypeAndBodyType(opWithMergedParams);
-      const headers = getHeadersForOperation(opWithMergedParams, spec, method, resolver);
+      const auth = operationAuth(
+        allParams,
+        op.security !== undefined ? op.security : spec.security,
+        spec.components?.securitySchemes
+      );
+      for (const [k, v] of Object.entries(auth.defaults)) {
+        if (!(k in authDefaults)) authDefaults[k] = v;
+      }
+      const headers = getHeadersForOperation(opWithMergedParams, auth, method);
       const pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, resolver, operationId, method, pathStr);
       const bodyParams = extractRequestBody(opWithMergedParams, operationId, method, pathStr, spec, resolver);
-      const inputParams = [...pathQueryHeaderParams, ...bodyParams];
+      const inputParams = [...pathQueryHeaderParams, ...credentialInputs(auth, pathQueryHeaderParams), ...bodyParams];
       const returns = extractResponses(opWithMergedParams, operationId, method, pathStr, spec, resolver);
       const errors = extractErrors(opWithMergedParams, spec, resolver);
 
@@ -685,40 +608,18 @@ function extractMethods(spec: any, resolver: RefResolver): Record<string, any> {
   return methods;
 }
 
-function extractSecurityDefaults(spec: any): Record<string, string> {
-  const defs: Record<string, string> = {};
-  const securitySchemes = spec.components?.securitySchemes || {};
-  
-  for (const [_name, scheme] of Object.entries<any>(securitySchemes)) {
-    if (scheme.type === 'http') {
-      if (scheme.scheme === 'bearer') {
-        defs.bearer_token = AUTH_TEMPLATE_BEARER;
-      } else if (scheme.scheme === 'basic') {
-        defs.basic_auth = AUTH_TEMPLATE_BASIC;
-      } else if (scheme.scheme === 'digest') {
-        defs.digest_auth = AUTH_TEMPLATE_DIGEST;
-      } else {
-        defs[`${scheme.scheme}_auth`] = `<${scheme.scheme.toUpperCase()}_CREDENTIALS>`;
-      }
-    } else if (scheme.type === 'apiKey') {
-      if (scheme.in === 'header') {
-        defs[scheme.name.toLowerCase()] = `<${scheme.name.toUpperCase()}>`;
-      } else if (scheme.in === 'query') {
-        defs[`query_${scheme.name.toLowerCase()}`] = `<${scheme.name.toUpperCase()}>`;
-      } else if (scheme.in === 'cookie') {
-        defs[`cookie_${scheme.name.toLowerCase()}`] = `<${scheme.name.toUpperCase()}>`;
-      }
-    } else if (scheme.type === 'oauth2') {
-      defs.bearer_token = AUTH_TEMPLATE_BEARER_ACCESS;
-    } else if (scheme.type === 'openIdConnect') {
-      defs.id_token = AUTH_TEMPLATE_ID_TOKEN;
-    }
+function extractSecurityDefaults(spec: any, operationDefaults: Record<string, string>): Record<string, string> {
+  // Every key an auth header references must exist in DEFAULTS (see
+  // auth-utils); declared-but-unused schemes are listed too.
+  const defs: Record<string, string> = allSchemesDefaults(spec.components?.securitySchemes);
+  for (const [k, v] of Object.entries(operationDefaults)) {
+    if (!(k in defs)) defs[k] = v;
   }
-  
-  // Add base URL
-  const baseUrl = spec.servers?.[0]?.url || DEFAULT_BASE_URL;
+
+  // Add base URL, with server variables filled from their defaults
+  const baseUrl = resolveServerUrl(spec.servers?.[0]) || DEFAULT_BASE_URL;
   defs.w_base_url = baseUrl.replace(/\/$/, ''); // Remove trailing slash
-  
+
   return defs;
 }
 
@@ -761,8 +662,9 @@ function generateWrekenfile(spec: any, baseDir: string): string {
     validateOpenApiV3Spec(spec);
     validateBaseDir(baseDir);
 
-    const defaults = extractSecurityDefaults(spec);
-    const methods = extractMethods(spec, resolver);
+    const authDefaults: Record<string, string> = {};
+    const methods = extractMethods(spec, resolver, authDefaults);
+    const defaults = extractSecurityDefaults(spec, authDefaults);
     const structs = extractStructs(spec, resolver);
 
     // Resolve canonical IDs for all methods
@@ -847,17 +749,9 @@ function generateWrekenfile(spec: any, baseDir: string): string {
  * Use this when you need visibility into what was converted and potential issues.
  */
 function generateWrekenfileWithStats(spec: any, baseDir: string): { yaml: string; stats: ConversionStats } {
-  try {
-    const yaml = generateWrekenfile(spec, baseDir);
-    const wrekenfile = load(yaml);
-    const stats = computeConversionStats(wrekenfile);
-    return { yaml, stats };
-  } catch (err: any) {
-    if (err.code && (err.code.startsWith('INVALID_') || err.code.startsWith('MISSING_'))) {
-      throw err;
-    }
-    throw err;
-  }
+  const yaml = generateWrekenfile(spec, baseDir);
+  const stats = computeConversionStats(load(yaml));
+  return { yaml, stats };
 }
 
 
