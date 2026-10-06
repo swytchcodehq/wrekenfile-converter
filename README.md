@@ -36,10 +36,10 @@ Recorded with [VHS](https://github.com/charmbracelet/vhs) from the committed [`d
 - **Multi-format Support**: Convert OpenAPI v2 (Swagger), OpenAPI v3, and Postman collections
 - **Wrekenfile v2.0.2 Compliant**: Generates Wrekenfiles compliant with the Wreken Specification v2.0.2 (latest)
 - **Complete Response Handling**: All response types (success and error) included in `RETURNS` arrays with `STATUS` codes
-- **Proper Parameter Structure**: Path parameters in `ENDPOINT`, header parameters in `HTTP.HEADERS`, query and body parameters in `INPUTS` with `LOCATION` field
+- **Proper Parameter Structure**: Every parameter is in `INPUTS` with a `LOCATION` field; path parameters also appear in `ENDPOINT` and auth headers in `HTTP.HEADERS`
 - **HTTP Details**: Includes `HTTP.CONTENT_TYPE`, `HTTP.ACCEPT`, `HTTP.BODY.TYPE`, and `HTTP.HEADERS` for complete HTTP execution context
 - **Execution Metadata**: Includes `EXECUTION.KIND` (http/sdk/hybrid) and `EXECUTION.MODE` (sync/async/fire_and_forget)
-- **Authentication Handling**: Auth headers (Authorization, X-API-Key, etc.) are properly mapped to `HEADERS` with placeholder values
+- **Authentication Handling**: Auth headers (Authorization, X-API-Key, etc.) reference a `DEFAULTS` key holding a placeholder template (`Authorization: bearer_token` → `bearer_token: Bearer <TOKEN>`). Scheme names match in any casing, Postman Auth tabs are read (with collection → folder → request inheritance), and API keys sent in the query or a cookie become optional inputs
 - **Comprehensive Error Handling**: Detailed error messages with context and error codes for invalid inputs, all errors include `STATUS` codes
 - **AI-Optimized**: Response structs explicitly referenced for easy AI consumption
 - **Standalone Mini Wrekenfiles**: Generate execution-complete, standalone mini-wrekenfiles (one per method) for vector DB storage and LLM code generation
@@ -193,16 +193,33 @@ The format is fully deterministic — derived only from `HTTP.METHOD` and `HTTP.
 
 ## Parameter Structure
 
-The converter properly structures parameters according to the Wrekenfile v2.0.2 specification:
+The converter structures parameters according to the Wrekenfile v2.0.2 specification. Every parameter is listed in `INPUTS` with a `LOCATION` field saying where it goes in the HTTP request:
 
-- **Path Parameters** (e.g., `/users/{userId}`): Included in the `ENDPOINT` field only, not in `INPUTS`
-- **Header Parameters** (e.g., `Authorization`, `X-Request-Id`): Included in `HTTP.HEADERS` only, not in `INPUTS`
-- **Query Parameters**: Included in `INPUTS` section with `LOCATION: query`
-- **Body Parameters**: Included in `INPUTS` section with `LOCATION: body` (e.g., `body: STRUCT(RequestType)`)
+- **Path Parameters** (e.g., `/users/{userId}`): `LOCATION: path`, and also written into `ENDPOINT`
+- **Query Parameters**: `LOCATION: query`
+- **Header Parameters** (e.g., `X-Request-Id`): `LOCATION: header`
+- **Cookie Parameters**: `LOCATION: cookie`
+- **Body Parameters**: `LOCATION: body` (e.g., `body: STRUCT(RequestType)`); form fields are listed individually
 
-All input parameters include a `LOCATION` field to clearly indicate where they should be placed in the HTTP request. The `HTTP.BODY.TYPE` field indicates the content type for body parameters (e.g., `application/json`, `application/x-www-form-urlencoded`).
+When a path and its operation both declare a parameter with the same name and location, the operation's definition wins and the parameter is listed once.
 
-This ensures proper separation of concerns and follows the Wrekenfile specification correctly.
+**Authentication** is not listed as an ordinary input:
+
+- Auth headers go in `HTTP.HEADERS`, and their value is the name of a `DEFAULTS` key, never a literal credential:
+
+  ```yaml
+  DEFAULTS:
+    bearer_token: Bearer <TOKEN>
+  METHODS:
+    example.thing.get:
+      HTTP:
+        HEADERS:
+          Authorization: bearer_token
+  ```
+
+- API keys sent in the query or a cookie (`apiKey` with `in: query` / `in: cookie`) are listed as an optional input of that location, and described in `SECURITY`.
+
+JSON request and response bodies are recognised in any spelling (`application/json; charset=utf-8`, `application/problem+json`, `application/vnd.api+json`) and get proper `STRUCT` types.
 
 ## Error Handling
 
@@ -382,10 +399,16 @@ src/
     ├── postman-to-wrekenfile.ts
     ├── mini-wrekenfile-generator.ts
     ├── utils/                      # Utility functions
+    │   ├── auth-utils.ts          # Auth → HEADERS, credential inputs and DEFAULTS (all converters)
     │   ├── canonical-id.ts        # Deterministic canonical ID generation
     │   ├── constants.ts           # Shared constants (auth, headers, types)
+    │   ├── conversion-stats.ts    # Conversion statistics
     │   ├── error-utils.ts         # Error handling and spec validation
-    │   ├── response-utils.ts      # RETURNVAR and error message generation
+    │   ├── media-type-utils.ts    # JSON / form media type matching
+    │   ├── openapi-utils.ts       # Parameter merging, server URLs, webhook handling
+    │   ├── ref-utils.ts           # $ref resolution and name sanitizing
+    │   ├── response-utils.ts      # RETURNVAR, pagination and error message generation
+    │   ├── schema-utils.ts        # Schema → type and STRUCT extraction
     │   ├── struct-utils.ts        # Struct filtering by usage
     │   ├── summary-utils.ts       # Operation summary generation
     │   ├── type-utils.ts          # OpenAPI → Wrekenfile type mapping

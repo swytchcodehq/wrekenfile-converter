@@ -75,14 +75,14 @@ HTTP:
   CONTENT_TYPE: application/json
   ACCEPT: application/json
   HEADERS:
-    Authorization:
-      TYPE: STRING
-      DESC: Bearer token
+    Authorization: bearer_token
 ```
 
 ### Notes
 - ENDPOINT may include `{path_params}`
-- HEADERS are declarative, not values
+- An auth header's value is the name of a `DEFAULTS` key in the full Wrekenfile
+  (here `bearer_token: Bearer <TOKEN>`), never a literal credential. Runtimes
+  substitute the real credential or omit the header.
 
 ---
 
