@@ -371,6 +371,9 @@ function getRequestAuth(request: any, ancestorAuths: any[]): AuthPlacement {
 
   for (const header of request.header || []) {
     if (!header || header.disabled || !header.key) continue;
+    // A credential header with no value (the schema allows it) says nothing about
+    // auth; it must not replace the Auth tab or turn noauth into a bearer token.
+    if (typeof header.value !== 'string' || header.value.trim() === '') continue;
     const key = String(header.key).toLowerCase();
     let explicit: AuthPlacement | undefined;
     if (key === AUTH_HEADER_AUTHORIZATION) {

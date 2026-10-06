@@ -333,6 +333,22 @@ describe('Postman auth', () => {
     expect(out.DEFAULTS['x-token']).toBe('<X-TOKEN>');
   });
 
+  it('an Authorization header with no value is ignored', () => {
+    for (const header of [{ key: 'Authorization', value: '' }, { key: 'Authorization', value: '  ' }, { key: 'Authorization' }]) {
+      const out = postman(collection({ item: [{ name: 'a', request: request({ auth: { type: 'noauth' }, header: [header] }) }] }));
+      expect(only(out).HTTP.HEADERS.Authorization).toBeUndefined();
+      expect(out.DEFAULTS.bearer_token).toBeUndefined();
+    }
+  });
+
+  it('an empty Authorization header does not replace the Auth tab', () => {
+    const out = postman(collection({ item: [{ name: 'a', request: request({
+      auth: { type: 'basic', basic: [{ key: 'username', value: 'u' }] },
+      header: [{ key: 'Authorization', value: '' }],
+    }) }] }));
+    expect(only(out).HTTP.HEADERS.Authorization).toBe('basic_auth');
+  });
+
   it('a disabled Authorization header is ignored', () => {
     const out = postman(collection({ item: [{ name: 'a', request: request({ header: [{ key: 'Authorization', value: 'Bearer x', disabled: true }] }) }] }));
     expect(only(out).HTTP.HEADERS.Authorization).toBeUndefined();
