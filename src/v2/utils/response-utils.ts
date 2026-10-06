@@ -17,6 +17,29 @@ export function generateReturnVarName(operationId: string, code: string): string
   }
 }
 
+/** Field names that carry the page size on page-numbered responses, in priority order. */
+const PAGE_SIZE_FIELDS = ['pageSize', 'page_size', 'perPage', 'per_page', 'limit', 'size'];
+
+/**
+ * PAGINATION hint for a success response from its schema's properties, or
+ * undefined when it doesn't look paginated. Field values are property names.
+ */
+export function detectPagination(properties: any): Record<string, string> | undefined {
+  if (!properties || typeof properties !== 'object') return undefined;
+  const has = (name: string) => properties[name] !== undefined && properties[name] !== null;
+
+  if (has('next_cursor') || has('cursor')) {
+    return { TYPE: 'cursor', CURSOR_FIELD: has('next_cursor') ? 'next_cursor' : 'cursor' };
+  }
+  if (has('offset') || has('skip')) {
+    return { TYPE: 'offset', OFFSET_FIELD: has('offset') ? 'offset' : 'skip' };
+  }
+  if (has('page') || has('pageNumber')) {
+    return { TYPE: 'page', PAGE_SIZE_FIELD: PAGE_SIZE_FIELDS.find(has) || 'limit' };
+  }
+  return undefined;
+}
+
 /**
  * Well-known HTTP status code descriptions for richer error messages
  */

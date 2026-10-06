@@ -447,7 +447,7 @@ function extractSecurityDefaults(spec: any): any[] {
         defs.push({ [`query_${scheme.name.toLowerCase()}`]: `<${scheme.name.toUpperCase()}>` });
       }
     } else if (scheme && typeof scheme === 'object' && scheme.type === 'oauth2') {
-      defs.push({ bearer_token: 'BEARER <ACCESS_TOKEN>' });
+      defs.push({ bearer_token: 'Bearer <ACCESS_TOKEN>' });
     }
   }
   
