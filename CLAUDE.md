@@ -8,7 +8,7 @@ Convert OpenAPI and Postman specs into Wrekenfiles, with chunking for vector dat
 - `src/v2/cli/` — CLI entry points (wrekenfile, wrekenfile-v2, wrekenfile-postman, wrekenfile-mini)
 - `src/index.ts` — Package exports
 - `src/versions.ts` — Version detection and routing
-- `tests/` — 12 Vitest test suites with JSON/YAML fixtures in tests/fixtures/
+- `tests/` — Vitest test suites with JSON/YAML fixtures in tests/fixtures/
 
 ## Key constraints
 - Fork of swytchcode/wrekenfile-converter — keep upstream compatibility in mind
@@ -24,7 +24,7 @@ npm test        # vitest run
 ```
 
 ## Testing
-12 test suites covering converters, utilities, and edge cases. Fixtures in tests/fixtures/.
+Test suites covering converters, utilities, and edge cases. Fixtures in tests/fixtures/.
 
 ## Agent workflow
 - Always work on a branch. Never push directly to main.

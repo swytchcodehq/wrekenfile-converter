@@ -94,9 +94,7 @@ METHODS:
       CONTENT_TYPE: application/json
       ACCEPT: application/json
       HEADERS:
-        Authorization:
-          TYPE: STRING
-          DESC: Bearer token for authentication
+        Authorization: bearer_token   # a DEFAULTS key, see Auth header references
       BODY:
         TYPE: STRUCT(UserCreateRequest)
 
@@ -267,6 +265,9 @@ RETURNS:
       TYPE: cursor      # cursor | offset | page | iterator
       CURSOR_FIELD: next_cursor
 ```
+
+`CURSOR_FIELD`, `OFFSET_FIELD` and `PAGE_SIZE_FIELD` hold the **name** of a property in
+the response or request (e.g. `PAGE_SIZE_FIELD: pageSize`), never a schema or a value.
 
 ---
 
