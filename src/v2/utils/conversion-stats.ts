@@ -19,8 +19,10 @@ export interface ConversionStats {
   structsPruned: number;
   /** Methods using each HTTP method */
   httpMethodCounts: Record<string, number>;
-  /** Methods with auth headers */
+  /** Methods with auth headers, or signed (request_signature) */
   methodsWithAuth: number;
+  /** Methods signed with a SIGNING recipe (Wrekenfile 2.1.0) */
+  methodsSigned: number;
   /** Methods with INPUTS */
   methodsWithInputs: number;
   /** Warnings about potential issues */
@@ -48,7 +50,10 @@ export function computeConversionStats(
   let methodsWithErrors = 0;
   let methodsWithAuth = 0;
   let methodsWithInputs = 0;
+  let methodsSigned = 0;
+  const looksSigned: string[] = [];
   const httpMethodCounts: Record<string, number> = {};
+  const hasSigning = !!wrekenfile.SIGNING && Object.keys(wrekenfile.SIGNING).length > 0;
 
   for (const [methodId, methodData] of Object.entries<any>(methods)) {
     methodCount++;
@@ -77,11 +82,20 @@ export function computeConversionStats(
     // in any case by user-edited files or other converters)
     const headers = methodData.HTTP?.HEADERS || {};
     const normalizedHeaderKeys = Object.keys(headers).map((k) => k.toLowerCase());
+    const signed = Array.isArray(methodData.SECURITY) && methodData.SECURITY.some((req: any) =>
+      Object.values<any>(req || {}).some((s) => s?.type === 'request_signature'));
+    if (signed) methodsSigned++;
     if (
+      signed ||
       normalizedHeaderKeys.includes('authorization') ||
       normalizedHeaderKeys.includes('x-api-key')
     ) {
       methodsWithAuth++;
+    }
+    // A signature, nonce or timestamp the caller would have to compute: the
+    // method fails at runtime unless a signing recipe produces it.
+    if (!hasSigning && signatureLikeNames(methodData).length > 0) {
+      looksSigned.push(methodId);
     }
 
     // Inputs
@@ -103,6 +117,13 @@ export function computeConversionStats(
     warnings.push('No methods have response types — LLMs will not be able to parse API responses');
   }
 
+  if (looksSigned.length > 0) {
+    warnings.push(
+      `${looksSigned.length} method(s) look signed (signature/nonce/timestamp header or parameter, e.g. ${looksSigned[0]}) ` +
+        'but no signing recipe is declared - add an x-swytchcode-signing recipe or they will fail with 401'
+    );
+  }
+
   if (methodCount > 0 && methodsWithAuth === 0 && methodCount > 3) {
     warnings.push('No methods have authentication headers — verify if this API requires auth');
   }
@@ -116,9 +137,28 @@ export function computeConversionStats(
     structsPruned,
     httpMethodCounts,
     methodsWithAuth,
+    methodsSigned,
     methodsWithInputs,
     warnings,
   };
+}
+
+/** Header or query names that carry a per-request signature. */
+const SIGNATURE_LIKE = /^(x-[a-z0-9]+-)*(signature|sign|nonce|timestamp|recv-?window|api-?sign)$/i;
+
+/** Header and query inputs/headers of a method whose names look like a signature. */
+function signatureLikeNames(methodData: any): string[] {
+  const names: string[] = [];
+  for (const h of Object.keys(methodData?.HTTP?.HEADERS || {})) {
+    if (SIGNATURE_LIKE.test(h)) names.push(h);
+  }
+  for (const entry of Array.isArray(methodData?.INPUTS) ? methodData.INPUTS : []) {
+    for (const [name, def] of Object.entries<any>(entry || {})) {
+      const loc = String(def?.LOCATION || '').toLowerCase();
+      if ((loc === 'header' || loc === 'query') && SIGNATURE_LIKE.test(name)) names.push(name);
+    }
+  }
+  return names;
 }
 
 /**

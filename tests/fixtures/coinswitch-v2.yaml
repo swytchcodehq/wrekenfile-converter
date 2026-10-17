@@ -1,0 +1,2108 @@
+openapi: 3.0.3
+info:
+  title: CoinSwitch PRO Trading API (Spot & Futures)
+  version: '2.0'
+  x-swytchcode-namespace: coinswitch
+  description: |-
+    REST API for CoinSwitch PRO Spot (INR / USDT pairs) and USDT-margined perpetual Futures.
+
+    Source documentation: https://api-trading.coinswitch.co/get-started/introduction
+
+    ## Authentication
+
+    Every request must be signed with Ed25519 and carry these headers, except the public
+    endpoints `GET /trade/api/v2/time`, `GET /trade/api/v2/ping`,
+    `GET /trade/api/v2/24hr/all-pairs/ticker` and `GET /trade/api/v2/futures/all-pairs/ticker`:
+
+    | Header | Value |
+    |---|---|
+    | `X-AUTH-APIKEY` | Your API key (the Ed25519 public key, hex). |
+    | `X-AUTH-SIGNATURE` | Ed25519 signature of the request, hex-encoded. |
+    | `X-AUTH-EPOCH` | Current Unix time in **milliseconds**, as a decimal string. |
+    | `Content-Type` | `application/json` |
+
+    The signature is computed **per request** over the UTF-8 bytes of:
+
+    ```
+    signed_message = METHOD + path_with_query + epoch
+    ```
+
+    - `METHOD` - uppercase HTTP method (`GET`, `POST`, `DELETE`, `PUT`).
+    - `path_with_query` - request path plus query string, **URL-decoded** (`+` -> space,
+      `%2C` -> `,`, `%2F` -> `/`). Scheme and host are not included.
+    - `epoch` - the exact value sent in `X-AUTH-EPOCH`.
+    - The request **body is not signed**.
+
+    Sign with your secret key (a 32-byte Ed25519 seed, hex) and hex-encode the 64-byte signature.
+
+    Examples (epoch `1719905777483`):
+
+    ```
+    GET /trade/api/v2/time                -> "GET/trade/api/v2/time1719905777483"
+    POST /trade/api/v2/order (any body)   -> "POST/trade/api/v2/order1719905777483"
+    GET /trade/api/v2/orders?open=true&exchanges=coinswitchx,c2c1
+                                          -> "GET/trade/api/v2/orders?open=true&exchanges=coinswitchx,c2c11719905777483"
+    ```
+
+    The epoch must be within +/-5,000 ms of server time (recommended); requests drifting more
+    than 60,000 ms are rejected with `401 Invalid Access`. Use `GET /trade/api/v2/time` to
+    read server time if the local clock is unreliable.
+
+    Order lookups (`GET /trade/api/v2/order`, `GET /trade/api/v2/futures/order`) accept only
+    `order_id`; there is no lookup by `client_order_id`. To reconcile a placement that timed
+    out, list open/closed orders and match on `client_order_id`.
+
+    A static header value cannot satisfy this scheme: `X-AUTH-SIGNATURE` and `X-AUTH-EPOCH`
+    must be generated for every call. See `x-swytchcode-signing` on the `CoinSwitchSignature`
+    security scheme for the machine-readable signing recipe.
+
+    ## Conventions
+
+    - Responses are wrapped as `{ "data": ... }`. Errors are `{ "message": "..." }`.
+    - All timestamps are Unix milliseconds unless stated otherwise.
+    - Spot symbols are `BASE/QUOTE` (e.g. `BTC/INR`); Futures symbols are `BASEUSDT` (e.g. `BTCUSDT`).
+    - Spot returns numeric fields as numbers; Futures returns most numeric fields as strings.
+    - Spot exchanges: `coinswitchx` (INR pairs), `c2c1` and `c2c2` (USDT pairs). Futures exchange: `EXCHANGE_2`.
+
+    HFT and B2B endpoints live on a different host (`https://dma.coinswitch.co`) and are
+    described in a separate spec (`coinswitch-hft`).
+  contact:
+    name: CoinSwitch API support
+    email: api@coinswitch.co
+    url: https://api-trading.coinswitch.co/
+  termsOfService: https://api-trading.coinswitch.co/resources/terms
+externalDocs:
+  description: CoinSwitch PRO API documentation
+  url: https://api-trading.coinswitch.co/get-started/introduction
+
+servers:
+  - url: https://coinswitch.co
+    description: Production
+
+security:
+  - CoinSwitchApiKey: []
+    CoinSwitchSignature: []
+    CoinSwitchEpoch: []
+
+tags:
+  - name: General
+    description: Server time, health check and key validation.
+  - name: Spot Market Data
+    description: Public spot market data (requests are still signed).
+  - name: Spot Trading
+    description: Spot orders, portfolio, fees and TDS.
+  - name: Futures Market Data
+    description: Futures instruments, tickers, order book, trades and candles.
+  - name: Futures Trading
+    description: Futures orders, positions, leverage, margin and wallet.
+
+paths:
+  # ---------------------------------------------------------------- General
+  /trade/api/v2/time:
+    get:
+      operationId: getServerTime
+      x-swytchcode-canonical-id: coinswitch.time.get
+      tags: [General]
+      summary: Get server time
+      description: Returns the server clock. This is the only endpoint that does not require authentication. Use it to seed `X-AUTH-EPOCH` when the local clock is unreliable.
+      security: []
+      responses:
+        '200':
+          description: Server time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serverTime:
+                    type: integer
+                    format: int64
+                    description: Server time (Unix milliseconds).
+              example:
+                serverTime: 1719905777483
+
+  /trade/api/v2/ping:
+    get:
+      operationId: ping
+      x-swytchcode-canonical-id: coinswitch.ping.check
+      tags: [General]
+      summary: Health check
+      description: Health check for the v2 trading API. Does not require authentication.
+      security: []
+      responses:
+        '200':
+          description: Service is reachable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: OK
+
+  /trade/api/v2/validate/keys:
+    get:
+      operationId: validateKeys
+      x-swytchcode-canonical-id: coinswitch.keys.validate
+      tags: [General]
+      summary: Validate API keys
+      description: Verifies that the API key, secret and signature are correct. Returns `Valid Access` on success.
+      responses:
+        '200':
+          description: Keys are valid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: Valid Access
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ------------------------------------------------------- Spot market data
+  /trade/api/v2/coins:
+    get:
+      operationId: getSpotActiveCoins
+      x-swytchcode-canonical-id: coinswitch.spot.coins.list
+      tags: [Spot Market Data]
+      summary: List active coins
+      description: List the trading symbols available on a given exchange.
+      parameters:
+        - $ref: '#/components/parameters/SpotExchangeQuery'
+      responses:
+        '200':
+          description: Symbols keyed by exchange.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    description: Keyed by exchange identifier; each value is an array of `BASE/QUOTE` symbols.
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: string
+              example:
+                data:
+                  coinswitchx: [BAT/INR, BNB/INR, BTC/INR, ETH/INR, MATIC/INR]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /trade/api/v2/24hr/all-pairs/ticker:
+    get:
+      operationId: getSpotAllPairsTicker
+      x-swytchcode-canonical-id: coinswitch.spot.ticker.list
+      tags: [Spot Market Data]
+      summary: Get 24hr ticker for all pairs
+      description: Returns 24hr stats for every symbol on an exchange. Does not require authentication.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SpotExchangeQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/SpotTickerMap'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /trade/api/v2/24hr/ticker:
+    get:
+      operationId: getSpotTicker
+      x-swytchcode-canonical-id: coinswitch.spot.ticker.get
+      tags: [Spot Market Data]
+      summary: Get 24hr ticker for a symbol
+      description: Returns 24hr stats for a specific symbol. Accepts a comma-separated list of exchanges.
+      parameters:
+        - name: exchange
+          in: query
+          required: true
+          description: Comma-separated list of exchange identifiers (`coinswitchx`, `c2c1`, `c2c2`), e.g. `coinswitchx,c2c1`.
+          schema:
+            type: string
+          example: coinswitchx,c2c1
+        - $ref: '#/components/parameters/SpotSymbolQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/SpotTickerMap'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /trade/api/v2/depth:
+    get:
+      operationId: getSpotDepth
+      x-swytchcode-canonical-id: coinswitch.spot.depth.get
+      tags: [Spot Market Data]
+      summary: Get order book depth
+      description: Snapshot of the order book (bids and asks) for a symbol on a given exchange.
+      parameters:
+        - $ref: '#/components/parameters/SpotExchangeQuery'
+        - $ref: '#/components/parameters/SpotSymbolQuery'
+      responses:
+        '200':
+          description: Order book snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderBook'
+              example:
+                data:
+                  symbol: DOGE/INR
+                  timestamp: 1686514361972
+                  bids: [['5.82', '4350']]
+                  asks: [['5.8664', '1238']]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /trade/api/v2/trades:
+    get:
+      operationId: getSpotTrades
+      x-swytchcode-canonical-id: coinswitch.spot.trades.list
+      tags: [Spot Market Data]
+      summary: Get recent trades
+      description: Recent public trades for a symbol on a given exchange.
+      parameters:
+        - $ref: '#/components/parameters/SpotExchangeQuery'
+        - $ref: '#/components/parameters/SpotSymbolQuery'
+      responses:
+        '200':
+          description: Recent trades.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SpotTrade'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /trade/api/v2/candles:
+    get:
+      operationId: getSpotCandles
+      x-swytchcode-canonical-id: coinswitch.spot.candles.list
+      tags: [Spot Market Data]
+      summary: Get candles
+      description: Historical OHLCV candlestick data for a symbol.
+      parameters:
+        - $ref: '#/components/parameters/SpotExchangeQuery'
+        - $ref: '#/components/parameters/SpotSymbolQuery'
+        - name: interval
+          in: query
+          required: true
+          description: Candle duration in minutes, e.g. 1, 5, 60, 1440.
+          schema:
+            type: integer
+          example: 60
+        - name: start_time
+          in: query
+          required: true
+          description: Range start (Unix milliseconds).
+          schema:
+            type: integer
+            format: int64
+        - name: end_time
+          in: query
+          required: true
+          description: Range end (Unix milliseconds).
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Candles.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Candle'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /trade/api/v2/tradeInfo:
+    get:
+      operationId: getSpotTradeInfo
+      x-swytchcode-canonical-id: coinswitch.spot.trade_info.get
+      tags: [Spot Market Data]
+      summary: Get trade info
+      description: Min/max order value and precision for a symbol (or every symbol on the exchange when `symbol` is omitted). Use it to validate orders before submitting.
+      parameters:
+        - $ref: '#/components/parameters/SpotExchangeQuery'
+        - name: symbol
+          in: query
+          required: false
+          description: '`BASE/QUOTE`. If omitted, returns info for all symbols on the exchange.'
+          schema:
+            type: string
+          example: BTC/INR
+      responses:
+        '200':
+          description: Trade info keyed by exchange, then by symbol.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      additionalProperties:
+                        $ref: '#/components/schemas/SpotTradeInfo'
+              example:
+                data:
+                  coinswitchx:
+                    BTC/INR:
+                      quote: { min: '150', max: '2500000' }
+                      precision: { base: 6, quote: 2, limit: 0 }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /trade/api/v2/exchangePrecision:
+    post:
+      operationId: getSpotExchangePrecision
+      x-swytchcode-canonical-id: coinswitch.spot.precision.get
+      tags: [Spot Market Data]
+      summary: Get exchange precision
+      description: Price and quantity precision for a symbol (or every symbol on the exchange when `symbol` is omitted).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exchange]
+              properties:
+                exchange:
+                  $ref: '#/components/schemas/SpotExchange'
+                symbol:
+                  type: string
+                  description: '`BASE/QUOTE`, e.g. `BTC/INR`. If omitted, returns precision for all symbols.'
+            example:
+              exchange: coinswitchx
+              symbol: BTC/INR
+      responses:
+        '200':
+          description: Precision keyed by exchange, then by symbol.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      additionalProperties:
+                        $ref: '#/components/schemas/SpotPrecision'
+              example:
+                data:
+                  coinswitchx:
+                    BTC/INR: { base: 5, quote: 2, limit: 0 }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ---------------------------------------------------------- Spot trading
+  /trade/api/v2/order:
+    post:
+      operationId: createSpotOrder
+      x-swytchcode-canonical-id: coinswitch.spot.order.create
+      tags: [Spot Trading]
+      summary: Create spot order
+      description: 'Place a new spot limit order. Rate limit: 100 requests / 10 s.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [side, symbol, type, price, quantity, exchange]
+              properties:
+                side:
+                  type: string
+                  enum: [buy, sell]
+                  description: buy or sell (case-insensitive).
+                symbol:
+                  type: string
+                  description: '`BASE/QUOTE`, e.g. `BTC/USDT`, `BTC/INR`.'
+                type:
+                  type: string
+                  enum: [LIMIT]
+                  description: Order type. Only `LIMIT` is supported.
+                price:
+                  type: number
+                  description: Limit price.
+                quantity:
+                  type: number
+                  description: Base asset quantity.
+                exchange:
+                  $ref: '#/components/schemas/SpotExchange'
+                client_order_id:
+                  type: string
+                  description: Idempotency key (UUID you generate). Re-sending the same value de-duplicates instead of placing twice.
+                expiry_period:
+                  type: integer
+                  description: Order TTL in seconds. Default 90.
+            example:
+              side: sell
+              symbol: BTC/USDT
+              type: LIMIT
+              price: 26000
+              quantity: 0.0009
+              exchange: c2c1
+      responses:
+        '200':
+          $ref: '#/components/responses/SpotOrderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    get:
+      operationId: getSpotOrder
+      x-swytchcode-canonical-id: coinswitch.spot.order.get
+      tags: [Spot Trading]
+      summary: Get spot order
+      description: Fetch the current state of a single order by `order_id`.
+      parameters:
+        - name: order_id
+          in: query
+          required: true
+          description: The CoinSwitch order ID.
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/SpotOrderResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      operationId: cancelSpotOrder
+      x-swytchcode-canonical-id: coinswitch.spot.order.cancel
+      tags: [Spot Trading]
+      summary: Cancel spot order
+      description: Cancel an open spot order. The status becomes `CANCELLATION_RAISED` until the exchange confirms, then `CANCELLED`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_id]
+              properties:
+                order_id:
+                  type: string
+                  description: The order ID to cancel.
+            example:
+              order_id: 698ed406-8ef5-4664-9779-f7978702a447
+      responses:
+        '200':
+          $ref: '#/components/responses/SpotOrderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /trade/api/v2/orders:
+    get:
+      operationId: listSpotOrders
+      x-swytchcode-canonical-id: coinswitch.spot.orders.list
+      tags: [Spot Trading]
+      summary: List spot orders
+      description: 'Open orders (`open=true`, default count 25) or closed orders (`open=false`, latest 500). Rate limit: 10000 requests / 10 s.'
+      parameters:
+        - name: open
+          in: query
+          required: true
+          description: '`true` for open orders, `false` for closed.'
+          schema:
+            type: boolean
+        - name: count
+          in: query
+          required: false
+          description: Page size. Default 25 for open, 500 for closed.
+          schema:
+            type: integer
+        - name: from_time
+          in: query
+          required: false
+          description: Orders created at/after this time (Unix ms).
+          schema:
+            type: integer
+            format: int64
+        - name: to_time
+          in: query
+          required: false
+          description: Orders created at/before this time (Unix ms).
+          schema:
+            type: integer
+            format: int64
+        - name: side
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [buy, sell]
+        - name: symbols
+          in: query
+          required: false
+          description: Comma-separated symbols, e.g. `btc/inr,eth/inr`.
+          schema:
+            type: string
+        - name: exchanges
+          in: query
+          required: false
+          description: Comma-separated exchange identifiers, e.g. `coinswitchx,c2c1`.
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: false
+          description: Order type. Defaults to `LIMIT`.
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: Filter by exact status. Used mainly with `open=false`.
+          schema:
+            $ref: '#/components/schemas/SpotOrderStatus'
+      responses:
+        '200':
+          description: Orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      orders:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SpotOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/user/portfolio:
+    get:
+      operationId: getSpotPortfolio
+      x-swytchcode-canonical-id: coinswitch.spot.portfolio.get
+      tags: [Spot Trading]
+      summary: Get portfolio
+      description: 'Wallet holdings including balances blocked in open orders, average buy price and current INR value. Rate limit: 5000 requests / 10 s.'
+      responses:
+        '200':
+          description: One entry per held asset.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PortfolioEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/tradingFee:
+    get:
+      operationId: getSpotTradingFee
+      x-swytchcode-canonical-id: coinswitch.spot.trading_fee.get
+      tags: [Spot Trading]
+      summary: Get trading fee
+      description: Maker/taker fee schedule for your account on an exchange, including active discounts.
+      parameters:
+        - $ref: '#/components/parameters/SpotExchangeQuery'
+      responses:
+        '200':
+          description: Fees keyed by exchange, then by base asset.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      additionalProperties:
+                        $ref: '#/components/schemas/TradingFee'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /trade/api/v2/tds:
+    get:
+      operationId: getSpotTds
+      x-swytchcode-canonical-id: coinswitch.spot.tds.get
+      tags: [Spot Trading]
+      summary: Get TDS
+      description: 'Cumulative TDS deducted on your trades for the current Indian financial year. C2C TDS is recorded with a 1-day delay. Rate limit: 25 requests / 10 s.'
+      responses:
+        '200':
+          description: TDS summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      total_tds_amount:
+                        type: number
+                        description: Cumulative TDS in INR.
+                      financial_year:
+                        type: string
+                        description: Indian financial year (April-March), e.g. `2024-2025`.
+              example:
+                data:
+                  total_tds_amount: 459.12
+                  financial_year: 2024-2025
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # ---------------------------------------------------- Futures market data
+  /trade/api/v2/futures/instrument_info:
+    get:
+      operationId: getFuturesInstrumentInfo
+      x-swytchcode-canonical-id: coinswitch.futures.instruments.list
+      tags: [Futures Market Data]
+      summary: Get instrument info
+      description: 'Trading rules, leverage limits, fees and tick size for every futures symbol. Rate limit: 100 requests / 60 s.'
+      parameters:
+        - name: exchange
+          in: query
+          required: false
+          description: '`EXCHANGE_2`. If omitted, returns info for all futures exchanges.'
+          schema:
+            $ref: '#/components/schemas/FuturesExchange'
+      responses:
+        '200':
+          description: Instruments keyed by symbol.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    additionalProperties:
+                      $ref: '#/components/schemas/FuturesInstrument'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/ticker:
+    get:
+      operationId: getFuturesTicker
+      x-swytchcode-canonical-id: coinswitch.futures.ticker.get
+      tags: [Futures Market Data]
+      summary: Get futures ticker
+      description: '24-hour stats and funding info for one futures symbol. `data` is keyed by exchange identifier. Rate limit: 100 requests / 60 s.'
+      parameters:
+        - $ref: '#/components/parameters/FuturesExchangeQuery'
+        - $ref: '#/components/parameters/FuturesSymbolQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/FuturesTickerMap'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/all-pairs/ticker:
+    get:
+      operationId: getFuturesAllPairsTicker
+      x-swytchcode-canonical-id: coinswitch.futures.ticker.list
+      tags: [Futures Market Data]
+      summary: Get futures ticker for all pairs
+      description: '24-hour stats for every futures symbol. `data` is keyed by symbol. Does not require authentication. Rate limit: 100 requests / 60 s.'
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/FuturesExchangeQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/FuturesTickerMap'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/order_book:
+    get:
+      operationId: getFuturesOrderBook
+      x-swytchcode-canonical-id: coinswitch.futures.order_book.get
+      tags: [Futures Market Data]
+      summary: Get futures order book
+      description: 'Top of book by default; send `l2Orderbook=true` for the deeper L2 view. Rate limit: 100 requests / 60 s (shared by both modes).'
+      parameters:
+        - $ref: '#/components/parameters/FuturesExchangeQuery'
+        - $ref: '#/components/parameters/FuturesSymbolQuery'
+        - name: l2Orderbook
+          in: query
+          required: false
+          description: Send `true` to fetch the L2 (deeper) view.
+          schema:
+            type: string
+            enum: ['true', 'false']
+      responses:
+        '200':
+          description: Order book snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OrderBook'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/trades:
+    get:
+      operationId: getFuturesTrades
+      x-swytchcode-canonical-id: coinswitch.futures.trades.list
+      tags: [Futures Market Data]
+      summary: Get futures trades
+      description: 'Recent public trades for a futures symbol. Rate limit: 100 requests / 60 s.'
+      parameters:
+        - $ref: '#/components/parameters/FuturesExchangeQuery'
+        - $ref: '#/components/parameters/FuturesSymbolQuery'
+      responses:
+        '200':
+          description: Recent trades.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesTrade'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/klines:
+    get:
+      operationId: getFuturesKlines
+      x-swytchcode-canonical-id: coinswitch.futures.klines.list
+      tags: [Futures Market Data]
+      summary: Get futures klines
+      description: 'Historical OHLCV candles for a futures symbol. Rate limit: 30 requests / 60 s.'
+      parameters:
+        - $ref: '#/components/parameters/FuturesExchangeQuery'
+        - $ref: '#/components/parameters/FuturesSymbolQuery'
+        - name: interval
+          in: query
+          required: true
+          description: Candle duration in minutes.
+          schema:
+            type: string
+            enum: ['1', '5', '15', '30', '60', '120', '240', '360', '720', '1440']
+        - name: start_time
+          in: query
+          required: false
+          description: Range start (Unix ms).
+          schema:
+            type: integer
+            format: int64
+        - name: end_time
+          in: query
+          required: false
+          description: Range end (Unix ms).
+          schema:
+            type: integer
+            format: int64
+        - name: limit
+          in: query
+          required: false
+          description: Number of candles to return.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Candles.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Candle'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # -------------------------------------------------------- Futures trading
+  /trade/api/v2/futures/order:
+    post:
+      operationId: placeFuturesOrder
+      x-swytchcode-canonical-id: coinswitch.futures.order.create
+      tags: [Futures Trading]
+      summary: Place futures order
+      description: |-
+        Place a new futures order. Rate limit: 20 requests / 60 s.
+
+        For TP/SL (`TAKE_PROFIT_MARKET` / `STOP_MARKET`) send `quantity: 0`, a `trigger_price`
+        and `reduce_only: true`; these apply to the whole open position on the symbol.
+
+        If the response status is `RAISED`, poll Get Futures Order until a terminal status.
+        Unlike Spot, `PARTIALLY_EXECUTED` is terminal in Futures.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exchange, symbol, side, order_type, quantity]
+              properties:
+                exchange:
+                  $ref: '#/components/schemas/FuturesExchange'
+                symbol:
+                  type: string
+                  description: '`BASEUSDT`, e.g. `BTCUSDT`, `DOGEUSDT` (case-insensitive).'
+                side:
+                  type: string
+                  enum: [BUY, SELL]
+                  description: BUY or SELL (case-insensitive).
+                order_type:
+                  type: string
+                  enum: [MARKET, LIMIT, TAKE_PROFIT_MARKET, STOP_MARKET]
+                price:
+                  type: number
+                  description: Limit price. Required for `LIMIT`; ignored otherwise.
+                quantity:
+                  type: number
+                  description: Base-asset quantity. Send 0 for `TAKE_PROFIT_MARKET` and `STOP_MARKET`.
+                trigger_price:
+                  type: number
+                  description: Trigger price. Required for `TAKE_PROFIT_MARKET` / `STOP_MARKET`.
+                reduce_only:
+                  type: boolean
+                  description: Must be `true` for `TAKE_PROFIT_MARKET` / `STOP_MARKET`. Optional for `LIMIT`.
+                time_in_force:
+                  type: string
+                  enum: [GTC, IOC, FOK]
+                  default: GTC
+                client_order_id:
+                  type: string
+                  description: Client-supplied UUID echoed back in order responses; use it to reconcile retries.
+            example:
+              exchange: EXCHANGE_2
+              symbol: dogeusdt
+              side: BUY
+              order_type: LIMIT
+              price: 0.28
+              quantity: 22
+      responses:
+        '200':
+          description: Order accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FuturesOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    get:
+      operationId: getFuturesOrder
+      x-swytchcode-canonical-id: coinswitch.futures.order.get
+      tags: [Futures Trading]
+      summary: Get futures order status
+      description: 'Fetch a single futures order. The order is wrapped in `data.order`. Rate limit: 20 requests / 60 s.'
+      parameters:
+        - name: order_id
+          in: query
+          required: true
+          description: The CoinSwitch order ID.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      order:
+                        $ref: '#/components/schemas/FuturesOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      operationId: cancelFuturesOrder
+      x-swytchcode-canonical-id: coinswitch.futures.order.cancel
+      tags: [Futures Trading]
+      summary: Cancel futures order
+      description: 'Cancel a single open futures order. The status is `CANCELLATION_RAISED` until the exchange confirms. Rate limit: 10 requests / 60 s.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exchange, order_id]
+              properties:
+                exchange:
+                  $ref: '#/components/schemas/FuturesExchange'
+                order_id:
+                  type: string
+                  description: The order ID to cancel.
+            example:
+              exchange: EXCHANGE_2
+              order_id: 698ed406-8ef5-4664-9779-f7978702a447
+      responses:
+        '200':
+          description: Cancellation requested.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FuturesCancelledOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/cancel_all:
+    post:
+      operationId: cancelAllFuturesOrders
+      x-swytchcode-canonical-id: coinswitch.futures.orders.cancel
+      tags: [Futures Trading]
+      summary: Cancel all open futures orders
+      description: 'Cancel every open order (including TP/SL), optionally scoped to one symbol. Rate limit: 10 requests / 60 s.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exchange]
+              properties:
+                exchange:
+                  $ref: '#/components/schemas/FuturesExchange'
+                symbol:
+                  type: string
+                  description: Only cancel orders on this symbol. Omit to cancel across all symbols.
+            example:
+              exchange: EXCHANGE_2
+      responses:
+        '200':
+          description: IDs of orders sent for cancellation.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      orders_ids:
+                        type: array
+                        items:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/orders/open:
+    post:
+      operationId: listFuturesOpenOrders
+      x-swytchcode-canonical-id: coinswitch.futures.open_orders.list
+      tags: [Futures Trading]
+      summary: List open futures orders
+      description: 'Working (non-terminal) futures orders. `from_time`..`to_time` may span at most 7 days; pass `data.cursor` as the next `to_time` to page. Rate limit: 20 requests / 60 s.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FuturesOrderListRequest'
+            example:
+              exchange: EXCHANGE_2
+              symbol: btcusdt
+      responses:
+        '200':
+          $ref: '#/components/responses/FuturesOrderList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/orders/closed:
+    post:
+      operationId: listFuturesClosedOrders
+      x-swytchcode-canonical-id: coinswitch.futures.closed_orders.list
+      tags: [Futures Trading]
+      summary: List closed futures orders
+      description: 'Terminal futures orders (`EXECUTED`, `PARTIALLY_EXECUTED`, `CANCELLED`). `from_time`..`to_time` may span at most 7 days; pass `data.cursor` as the next `to_time` to page. Rate limit: 20 requests / 60 s.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/FuturesOrderListRequest'
+                - type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [EXECUTED, PARTIALLY_EXECUTED, CANCELLED]
+                      description: Filter to a specific terminal status.
+            example:
+              exchange: EXCHANGE_2
+              symbol: btcusdt
+              limit: 10
+      responses:
+        '200':
+          $ref: '#/components/responses/FuturesOrderList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/positions:
+    get:
+      operationId: getFuturesPositions
+      x-swytchcode-canonical-id: coinswitch.futures.positions.list
+      tags: [Futures Trading]
+      summary: Get futures positions
+      description: 'Currently open futures positions, optionally filtered to one symbol. Rate limit: 20 requests / 60 s.'
+      parameters:
+        - $ref: '#/components/parameters/FuturesExchangeQuery'
+        - name: symbol
+          in: query
+          required: false
+          description: Filter to one symbol, e.g. `BTCUSDT`. Omit to list all open positions.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Open positions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesPosition'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/leverage:
+    get:
+      operationId: getFuturesLeverage
+      x-swytchcode-canonical-id: coinswitch.futures.leverage.get
+      tags: [Futures Trading]
+      summary: Get leverage
+      description: 'Current leverage on a futures symbol. Rate limit: 20 requests / 60 s.'
+      parameters:
+        - $ref: '#/components/parameters/FuturesSymbolQuery'
+        - $ref: '#/components/parameters/FuturesExchangeQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/FuturesLeverage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      operationId: updateFuturesLeverage
+      x-swytchcode-canonical-id: coinswitch.futures.leverage.update
+      tags: [Futures Trading]
+      summary: Update leverage
+      description: 'Set leverage for a futures symbol. Not allowed while the symbol has an open position or open orders. Rate limit: 10 requests / 60 s.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symbol, exchange, leverage]
+              properties:
+                symbol:
+                  type: string
+                exchange:
+                  $ref: '#/components/schemas/FuturesExchange'
+                leverage:
+                  type: integer
+                  description: Between the symbol's `min_leverage` and `max_leverage` (see Get Instrument Info).
+            example:
+              symbol: btcusdt
+              exchange: EXCHANGE_2
+              leverage: 13
+      responses:
+        '200':
+          $ref: '#/components/responses/FuturesLeverage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/add_margin:
+    post:
+      operationId: addFuturesMargin
+      x-swytchcode-canonical-id: coinswitch.futures.margin.add
+      tags: [Futures Trading]
+      summary: Add margin
+      description: 'Top up margin on an open position. Returns the updated position. Rate limit: 10 requests / 60 s.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symbol, exchange, margin]
+              properties:
+                symbol:
+                  type: string
+                exchange:
+                  $ref: '#/components/schemas/FuturesExchange'
+                margin:
+                  type: integer
+                  description: USDT amount to add. Must not exceed available wallet balance.
+            example:
+              exchange: EXCHANGE_2
+              symbol: dogeusdt
+              margin: 16
+      responses:
+        '200':
+          description: Updated position.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FuturesPosition'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/wallet_balance:
+    get:
+      operationId: getFuturesWalletBalance
+      x-swytchcode-canonical-id: coinswitch.futures.wallet_balance.get
+      tags: [Futures Trading]
+      summary: Get futures wallet balance
+      description: 'Total and available futures balance plus a per-symbol breakdown of locked margin. Rate limit: 20 requests / 60 s.'
+      responses:
+        '200':
+          description: Wallet balance.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FuturesWalletBalance'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /trade/api/v2/futures/transactions:
+    get:
+      operationId: getFuturesTransactions
+      x-swytchcode-canonical-id: coinswitch.futures.transactions.list
+      tags: [Futures Trading]
+      summary: Get futures transactions
+      description: 'Balance-affecting transactions: commissions, funding, P&L, add-margin and liquidation fees. Rate limit: 20 requests / 60 s.'
+      parameters:
+        - $ref: '#/components/parameters/FuturesExchangeQuery'
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: false
+          description: 'Filter by type: `commission`, `P&L`, `funding fee`, `liquidation fee`.'
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: from_time
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: to_time
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Transactions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesTransaction'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+components:
+  securitySchemes:
+    CoinSwitchApiKey:
+      type: apiKey
+      in: header
+      name: X-AUTH-APIKEY
+      description: Your CoinSwitch API key (Ed25519 public key, hex). Static per account.
+    CoinSwitchSignature:
+      type: apiKey
+      in: header
+      name: X-AUTH-SIGNATURE
+      description: |-
+        Hex-encoded Ed25519 signature, generated per request with your secret key over
+        `METHOD + url_decoded(path_with_query) + X-AUTH-EPOCH`. The body is not signed.
+      # Signing recipe (Swytchcode recipe v1): the CLI evaluates it on every request.
+      # Message = METHOD + URL-decoded path?query + epoch (ms); the body is not signed.
+      x-swytchcode-signing:
+        version: 1
+        credentials:
+          - {name: api_key, label: API key}
+          - {name: secret_key, label: Secret key, secret: true, encoding: hex}
+        steps:
+          - {id: ts, op: time, unit: ms}
+          - {id: msg, op: concat, parts: ['{method}', '{path_query_decoded}', '{ts}']}
+          - {id: sig, op: sign, alg: ed25519, key: secret_key, input: '{msg}', output: hex}
+        set:
+          headers:
+            X-AUTH-APIKEY: '{api_key}'
+            X-AUTH-EPOCH: '{ts}'
+            X-AUTH-SIGNATURE: '{sig}'
+        sensitive: [X-AUTH-SIGNATURE]
+        verify: {method: GET, path: /trade/api/v2/validate/keys}
+        time_sync: {path: /trade/api/v2/time, json_path: serverTime, unit: ms, proactive: true}
+    CoinSwitchEpoch:
+      type: apiKey
+      in: header
+      name: X-AUTH-EPOCH
+      description: |-
+        Current Unix time in milliseconds (decimal string), generated per request. Must equal the
+        epoch used in the signed message. Keep within +/-5,000 ms of server time; more than
+        60,000 ms of drift is rejected.
+
+  parameters:
+    SpotExchangeQuery:
+      name: exchange
+      in: query
+      required: true
+      description: Spot exchange identifier (case-insensitive). `coinswitchx` = INR pairs; `c2c1`, `c2c2` = USDT pairs.
+      schema:
+        $ref: '#/components/schemas/SpotExchange'
+    SpotSymbolQuery:
+      name: symbol
+      in: query
+      required: true
+      description: '`BASE/QUOTE`, e.g. `BTC/INR`, `BTC/USDT` (case-insensitive).'
+      schema:
+        type: string
+      example: BTC/INR
+    FuturesExchangeQuery:
+      name: exchange
+      in: query
+      required: true
+      description: Futures exchange identifier. Always `EXCHANGE_2`.
+      schema:
+        $ref: '#/components/schemas/FuturesExchange'
+    FuturesSymbolQuery:
+      name: symbol
+      in: query
+      required: true
+      description: '`BASEUSDT`, e.g. `BTCUSDT` (case-insensitive).'
+      schema:
+        type: string
+      example: BTCUSDT
+
+  responses:
+    BadRequest:
+      description: Request rejected, e.g. insufficient balance.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+          example:
+            message: Amount is more than available balance
+    Unauthorized:
+      description: Bad API key or signature, or `X-AUTH-EPOCH` outside the drift window.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+          example:
+            message: Invalid Access
+    ValidationError:
+      description: A field is missing or has an invalid value.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+          example:
+            message: Input symbol is missing
+    RateLimited:
+      description: Rate limit exceeded (limits are per API key). Back off and retry.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+    SpotOrderResponse:
+      description: Order.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                $ref: '#/components/schemas/SpotOrder'
+          example:
+            data:
+              order_id: 927db2d9-643c-47a3-9c0f-78741ac95cf5
+              symbol: BTC/USDT
+              price: 26000
+              average_price: 0
+              orig_qty: 0.0009
+              executed_qty: 0
+              status: OPEN
+              side: SELL
+              exchange: c2c1
+              order_source: API_TRADING
+              created_time: 1689661638000
+              updated_time: 1689661639000
+    SpotTickerMap:
+      description: 24hr tickers keyed by symbol.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/SpotTicker'
+    FuturesTickerMap:
+      description: Futures tickers in an object (keyed by exchange for a single symbol, by symbol for all pairs).
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/FuturesTicker'
+    FuturesOrderList:
+      description: Orders plus a pagination cursor.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesOrder'
+                  cursor:
+                    type: integer
+                    format: int64
+                    description: Unix ms of the oldest entry returned. Pass as `to_time` to fetch the next page.
+    FuturesLeverage:
+      description: Leverage on the symbol.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  exchange:
+                    type: string
+                  symbol:
+                    type: string
+                  leverage:
+                    type: string
+          example:
+            data:
+              exchange: EXCHANGE_2
+              symbol: BTCUSDT
+              leverage: '13'
+
+  schemas:
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+
+    SpotExchange:
+      type: string
+      enum: [coinswitchx, c2c1, c2c2]
+      description: '`coinswitchx` = INR pairs; `c2c1`, `c2c2` = USDT (crypto-to-crypto) pairs.'
+
+    FuturesExchange:
+      type: string
+      enum: [EXCHANGE_2]
+
+    SpotOrderStatus:
+      type: string
+      enum: [OPEN, PARTIALLY_EXECUTED, EXECUTED, CANCELLED, EXPIRED, DISCARDED, CANCELLATION_RAISED, EXPIRATION_RAISED]
+      description: '`PARTIALLY_EXECUTED`, `CANCELLATION_RAISED` and `EXPIRATION_RAISED` are non-terminal in Spot.'
+
+    FuturesOrderStatus:
+      type: string
+      enum: [RAISED, EXECUTED, PARTIALLY_EXECUTED, CANCELLED, CANCELLATION_RAISED]
+      description: '`PARTIALLY_EXECUTED` is terminal in Futures.'
+
+    SpotOrder:
+      type: object
+      properties:
+        order_id:
+          type: string
+          description: CoinSwitch order ID (UUID).
+        client_order_id:
+          type: string
+          description: Echo of the client-supplied ID, when sent.
+        symbol:
+          type: string
+        price:
+          type: number
+        average_price:
+          type: number
+          description: Average fill price; 0 until any fill.
+        orig_qty:
+          type: number
+        executed_qty:
+          type: number
+        status:
+          $ref: '#/components/schemas/SpotOrderStatus'
+        side:
+          type: string
+          enum: [BUY, SELL]
+        exchange:
+          type: string
+        order_source:
+          type: string
+          description: Always `API_TRADING` for orders placed via this API.
+        created_time:
+          type: integer
+          format: int64
+        updated_time:
+          type: integer
+          format: int64
+
+    SpotTicker:
+      type: object
+      properties:
+        symbol:
+          type: string
+        exchange:
+          type: string
+        openPrice:
+          type: string
+        lowPrice:
+          type: string
+        highPrice:
+          type: string
+        lastPrice:
+          type: string
+        baseVolume:
+          type: string
+        quoteVolume:
+          type: string
+        percentageChange:
+          type: string
+        bidPrice:
+          type: string
+        askPrice:
+          type: string
+        at:
+          type: integer
+          format: int64
+          description: Snapshot time (Unix ms).
+
+    OrderBook:
+      type: object
+      properties:
+        symbol:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+        bids:
+          type: array
+          description: Sorted descending. Each entry is `[price, quantity]` as strings.
+          items:
+            type: array
+            items:
+              type: string
+        asks:
+          type: array
+          description: Sorted ascending. Each entry is `[price, quantity]` as strings.
+          items:
+            type: array
+            items:
+              type: string
+
+    SpotTrade:
+      type: object
+      properties:
+        E:
+          type: integer
+          format: int64
+          description: Event time (Unix ms).
+        m:
+          type: boolean
+          description: true if the buyer was the maker.
+        p:
+          type: string
+          description: Price.
+        q:
+          type: string
+          description: Quantity (base asset).
+        s:
+          type: string
+          description: Symbol.
+        t:
+          type: string
+          description: Trade ID (UUID).
+        e:
+          type: string
+          description: Exchange identifier.
+
+    Candle:
+      type: object
+      properties:
+        o:
+          type: string
+        h:
+          type: string
+        l:
+          type: string
+        c:
+          type: string
+        volume:
+          type: string
+          description: Volume in base asset.
+        symbol:
+          type: string
+        interval:
+          type: string
+          description: Interval in minutes.
+        start_time:
+          type: string
+          description: Candle start (Unix ms).
+        close_time:
+          type: string
+          description: Candle close (Unix ms).
+
+    SpotPrecision:
+      type: object
+      properties:
+        base:
+          type: integer
+          description: Decimal places for quantity.
+        quote:
+          type: integer
+          description: Decimal places for price.
+        limit:
+          type: integer
+          description: Limit-order precision adjustment (typically 0).
+
+    SpotTradeInfo:
+      type: object
+      properties:
+        quote:
+          type: object
+          properties:
+            min:
+              type: string
+              description: Minimum order value in quote asset.
+            max:
+              type: string
+              description: Maximum order value in quote asset.
+        precision:
+          $ref: '#/components/schemas/SpotPrecision'
+
+    TradingFee:
+      type: object
+      properties:
+        maker_fee:
+          type: number
+          description: Decimal rate (0.0009 = 0.09%).
+        taker_fee:
+          type: number
+        maker_discount_percentage:
+          type: number
+        taker_discount_percentage:
+          type: number
+        maker_fee_after_discount:
+          type: number
+        taker_fee_after_discount:
+          type: number
+        timestamp:
+          type: integer
+          format: int64
+          description: Last update (Unix **seconds**).
+
+    PortfolioEntry:
+      type: object
+      description: Crypto rows return balances as strings; the INR row returns numbers.
+      properties:
+        name:
+          type: string
+        currency:
+          type: string
+        main_balance:
+          oneOf:
+            - type: string
+            - type: number
+        blocked_balance_order:
+          oneOf:
+            - type: string
+            - type: number
+        buy_average_price:
+          type: number
+        invested_value:
+          type: number
+        invested_value_excluding_fee:
+          type: number
+        current_value:
+          type: number
+        sell_rate:
+          type: number
+        buy_rate:
+          type: number
+        is_average_price_available:
+          type: boolean
+        is_delisted_coin:
+          type: boolean
+
+    FuturesOrderListRequest:
+      type: object
+      required: [exchange]
+      properties:
+        exchange:
+          $ref: '#/components/schemas/FuturesExchange'
+        symbol:
+          type: string
+        limit:
+          type: integer
+          maximum: 50
+          description: Page size, max 50.
+        from_time:
+          type: integer
+          format: int64
+        to_time:
+          type: integer
+          format: int64
+
+    FuturesOrder:
+      type: object
+      properties:
+        order_id:
+          type: string
+        client_order_id:
+          type: string
+        exchange:
+          type: string
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [BUY, SELL]
+        status:
+          $ref: '#/components/schemas/FuturesOrderStatus'
+        order_type:
+          type: string
+          enum: [MARKET, LIMIT, TAKE_PROFIT_MARKET, STOP_MARKET]
+        quantity:
+          type: string
+        exec_quantity:
+          type: string
+        price:
+          type: string
+        avg_execution_price:
+          type: string
+        execution_fee:
+          type: string
+        realised_pnl:
+          type: string
+        reduce_only:
+          type: boolean
+        trigger_price:
+          type: string
+        created_at:
+          type: integer
+          format: int64
+        updated_at:
+          type: integer
+          format: int64
+
+    FuturesCancelledOrder:
+      type: object
+      description: Cancel response. Uses `avg_exec_price` and `exec_fee` instead of `avg_execution_price` / `execution_fee`.
+      properties:
+        order_id:
+          type: string
+        exchange:
+          type: string
+        symbol:
+          type: string
+        side:
+          type: string
+        order_type:
+          type: string
+        status:
+          $ref: '#/components/schemas/FuturesOrderStatus'
+        quantity:
+          type: string
+        exec_quantity:
+          type: string
+        price:
+          type: string
+        avg_exec_price:
+          type: string
+        exec_fee:
+          type: string
+        reduce_only:
+          type: boolean
+        created_at:
+          type: integer
+          format: int64
+        updated_at:
+          type: integer
+          format: int64
+
+    FuturesPosition:
+      type: object
+      properties:
+        exchange:
+          type: string
+        position_id:
+          type: string
+        symbol:
+          type: string
+        position_side:
+          type: string
+          enum: [LONG, SHORT]
+        leverage:
+          type: string
+        position_size:
+          type: string
+        position_value:
+          type: string
+        position_margin:
+          type: string
+        maint_margin:
+          type: string
+        avg_entry_price:
+          type: string
+        mark_price:
+          type: string
+        last_price:
+          type: string
+        unrealised_pnl:
+          type: string
+        liquidation_price:
+          type: string
+        client_txn_id:
+          type: string
+        margin_type:
+          type: string
+          enum: [ISOLATED, CROSS]
+        status:
+          type: string
+        created_at:
+          type: integer
+          format: int64
+        updated_at:
+          type: integer
+          format: int64
+
+    FuturesTicker:
+      type: object
+      properties:
+        symbol:
+          type: string
+        exchange:
+          type: string
+        last_price:
+          type: string
+        low_price_24h:
+          type: string
+        high_price_24h:
+          type: string
+        best_ask_price:
+          type: string
+        best_bid_price:
+          type: string
+        best_ask_size:
+          type: string
+        best_bid_size:
+          type: string
+        price_24h_pcnt:
+          type: string
+        base_asset_volume_24h:
+          type: string
+        quote_asset_volume_24h:
+          type: string
+        index_price:
+          type: number
+        mark_price:
+          type: number
+        open_interest:
+          type: string
+        open_interest_value:
+          type: string
+        funding_rate:
+          type: number
+        next_funding_timestamp:
+          type: integer
+          format: int64
+        timestamp:
+          type: integer
+          format: int64
+
+    FuturesInstrument:
+      type: object
+      properties:
+        symbol:
+          type: string
+          description: Lowercase base asset, e.g. `btc`.
+        base_asset:
+          type: string
+        quote_asset:
+          type: string
+        status:
+          type: string
+        type:
+          type: string
+        min_leverage:
+          type: string
+        max_leverage:
+          type: string
+        leverage_step:
+          type: integer
+        min_base_quantity:
+          type: string
+        base_quantity_step_size:
+          type: string
+        lot_size:
+          type: string
+        quantity_precision:
+          type: integer
+          description: Negative means trailing zeros are required (e.g. -2 = multiples of 100).
+        price_precision:
+          type: integer
+        tick_size:
+          type: integer
+        max_market_base_quantity:
+          type: string
+        max_base_quantity:
+          type: string
+        risk_limit:
+          type: string
+        maint_margin_rate:
+          type: string
+        taker_fee_rate:
+          type: string
+        maker_fee_rate:
+          type: string
+        liq_fee_rate:
+          type: string
+        quote_asset_precision:
+          type: integer
+
+    FuturesTrade:
+      type: object
+      properties:
+        E:
+          type: integer
+          format: int64
+          description: Trade time (Unix ms).
+        p:
+          type: number
+          description: Price.
+        q:
+          type: number
+          description: Quantity (base asset).
+        s:
+          type: string
+          description: Symbol.
+        e:
+          type: string
+          description: Exchange identifier.
+        m:
+          type: boolean
+          description: true if the buyer was the maker.
+
+    FuturesTransaction:
+      type: object
+      properties:
+        exchange:
+          type: string
+        transaction_id:
+          type: string
+        symbol:
+          type: string
+        type:
+          type: string
+          enum: [FUNDING_FEE, COMMISSION, P&L, LIQUIDATION_FEE, ADD_MARGIN]
+        quote_asset:
+          type: string
+        amount:
+          type: string
+          description: Signed amount; positive = credit, negative = debit.
+
+    FuturesWalletBalance:
+      type: object
+      properties:
+        base_asset_balances:
+          type: array
+          items:
+            type: object
+            properties:
+              base_asset:
+                type: string
+              balances:
+                type: object
+                properties:
+                  total_balance:
+                    type: string
+                  total_available_balance:
+                    type: string
+                  total_blocked_balance:
+                    type: string
+                  total_position_margin:
+                    type: string
+                  total_open_order_margin:
+                    type: string
+        asset:
+          type: array
+          items:
+            type: object
+            properties:
+              symbol:
+                type: string
+              base_asset:
+                type: string
+              exchange:
+                type: string
+              blocked_balance:
+                type: string
+              position_margin:
+                type: string
+              open_order_margin:
+                type: string

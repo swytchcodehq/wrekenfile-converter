@@ -9,7 +9,7 @@ Convert OpenAPI and Postman specs into execution-first Wrekenfiles for AI agents
 [![npm version](https://img.shields.io/npm/v/wrekenfile-converter?style=flat-square)](https://www.npmjs.com/package/wrekenfile-converter)
 [![CI](https://github.com/swytchcodehq/wrekenfile-converter/actions/workflows/ci.yml/badge.svg)](https://github.com/swytchcodehq/wrekenfile-converter/actions/workflows/ci.yml)
 
-[![Wreken Spec](https://img.shields.io/badge/Wreken-v2.0.2-purple?style=flat-square)](https://wreken.com)
+[![Wreken Spec](https://img.shields.io/badge/Wreken-v2.1.0-purple?style=flat-square)](https://wreken.com)
 [![Swytchcode](https://img.shields.io/badge/by-Swytchcode-orange?style=flat-square)](https://www.swytchcode.com/)
 
 [Demo](./demo) | [Wreken Spec](https://wreken.com) | [npm](https://www.npmjs.com/package/wrekenfile-converter) | [Issues](https://github.com/swytchcodehq/wrekenfile-converter/issues)
@@ -19,7 +19,7 @@ Convert OpenAPI and Postman specs into execution-first Wrekenfiles for AI agents
 ---
 
 A TypeScript/JavaScript library for converting OpenAPI specifications (v2 and v3) and Postman collections into **Wrekenfiles**, declarative YAML artifacts that act as the single source of truth for API methods, workflows, headers, and responses.
-Generated Wrekenfiles are compliant with the [**Wreken Specification v2.0.2**](./specification/wreken_specification_v2.md) and support advanced mini-chunking for vector database storage and AI context management.
+Generated Wrekenfiles are compliant with the [**Wreken Specification v2.1.0**](./specification/wreken_specification_v2.md) and support advanced mini-chunking for vector database storage and AI context management.
 
 **See a real-world example:** [`demo/`](./demo) — Podcast Index API (50 endpoints, 228 schemas) converted to a full Wrekenfile + 52 mini-wrekenfiles.
 
@@ -34,8 +34,9 @@ Recorded with [VHS](https://github.com/charmbracelet/vhs) from the committed [`d
 ## Features
 
 - **Multi-format Support**: Convert OpenAPI v2 (Swagger), OpenAPI v3, and Postman collections
-- **Wrekenfile v2.0.2 Compliant**: Generates Wrekenfiles compliant with the Wreken Specification v2.0.2 (latest)
+- **Wrekenfile v2.1.0 Compliant**: Generates Wrekenfiles compliant with the Wreken Specification v2.1.0 (latest)
 - **Complete Response Handling**: All response types (success and error) included in `RETURNS` arrays with `STATUS` codes
+- **Signed Requests (2.1.0)**: Specs that declare an `x-swytchcode-signing` recipe (crypto exchanges) get a `SIGNING` block, and their signature and timestamp fields are left out of method inputs. See [Signed requests](#signed-requests)
 - **Proper Parameter Structure**: Every parameter is in `INPUTS` with a `LOCATION` field; path parameters also appear in `ENDPOINT` and auth headers in `HTTP.HEADERS`
 - **HTTP Details**: Includes `HTTP.CONTENT_TYPE`, `HTTP.ACCEPT`, `HTTP.BODY.TYPE`, and `HTTP.HEADERS` for complete HTTP execution context
 - **Execution Metadata**: Includes `EXECUTION.KIND` (http/sdk/hybrid) and `EXECUTION.MODE` (sync/async/fire_and_forget)
@@ -66,7 +67,7 @@ yarn add wrekenfile-converter
 
 This library supports two Wrekenfile versions:
 - **v1** based on Wreken Specification 1.2 (legacy)
-- **v2** based on Wreken Specification 2.0.2 (latest)
+- **v2** based on Wreken Specification 2.1.0 (latest)
 
 ### Importing the Library
 
@@ -83,7 +84,7 @@ import {
 } from 'wrekenfile-converter';
 ```
 
-**Recommended: Use v2 (latest Wrekenfile spec 2.0.2):**
+**Recommended: Use v2 (latest Wrekenfile spec 2.1.0):**
 ```typescript
 import {
   generateWrekenfile, // OpenAPI v3
@@ -99,7 +100,7 @@ import {
 // Import v1 (Wrekenfile spec 1.2)
 import { generateWrekenfile } from 'wrekenfile-converter/v1';
 
-// Import v2 (Wrekenfile spec 2.0.2) - Recommended
+// Import v2 (Wrekenfile spec 2.1.0) - Recommended
 import { generateWrekenfile } from 'wrekenfile-converter/v2';
 ```
 
@@ -191,9 +192,53 @@ METHODS:
 
 The format is fully deterministic — derived only from `HTTP.METHOD` and `HTTP.ENDPOINT` as shown above — so it can be re-implemented consistently in SDKs or other languages without needing an LLM.
 
+To choose a name yourself (for example when two endpoints would otherwise become `ticker.list` and `ticker.list1`), set `x-swytchcode-canonical-id` on the operation:
+
+```yaml
+paths:
+  /trade/api/v2/futures/order:
+    post:
+      operationId: placeFuturesOrder
+      x-swytchcode-canonical-id: coinswitch.futures.order.create
+```
+
+## Signed requests
+
+Some APIs, crypto exchanges in particular, need a fresh signature on every request. For each call the client builds a timestamp or nonce, signs a message built from the request with a secret, and sends the result in headers, the query or the body. A spec declares how with an `x-swytchcode-signing` recipe, either on a security scheme or at the spec root:
+
+```yaml
+components:
+  securitySchemes:
+    CoinSwitchSignature:
+      type: apiKey
+      in: header
+      name: X-AUTH-SIGNATURE
+      x-swytchcode-signing:
+        version: 1
+        credentials:
+          - {name: api_key, label: API key}
+          - {name: secret_key, label: Secret key, secret: true, encoding: hex}
+        steps:
+          - {id: ts, op: time, unit: ms}
+          - {id: msg, op: concat, parts: ['{method}', '{path_query_decoded}', '{ts}']}
+          - {id: sig, op: sign, alg: ed25519, key: secret_key, input: '{msg}', output: hex}
+        set:
+          headers: {X-AUTH-APIKEY: '{api_key}', X-AUTH-EPOCH: '{ts}', X-AUTH-SIGNATURE: '{sig}'}
+```
+
+The converter (OpenAPI v3, Swagger v2 and Postman):
+
+- copies the recipe verbatim into the Wrekenfile's top-level `SIGNING` block;
+- gives each method whose security uses it `SECURITY: [{CoinSwitchSignature: {type: request_signature}}]`. Methods with `security: []` stay unsigned;
+- leaves every header, query parameter and body field the recipe produces out of `HEADERS`, `INPUTS`, request `STRUCTS` and `DEFAULTS`. For example, Binance's required `timestamp` and `signature` parameters are dropped.
+
+Postman collections sign in pre-request scripts, which the converter cannot run, so they need the recipe from outside: pass `{ signing: recipe }` as the third argument of `generateWrekenfileFromPostman`, or `--signing recipe.json` on the CLI. A collection can also carry it as a collection variable named `x-swytchcode-signing`.
+
+Without a recipe, a method that has a signature, nonce or timestamp header or parameter gets a warning in the conversion stats: it will fail with 401 until a recipe is attached. The recipe format and its building blocks are defined in section 15 of the [specification](./specification/wreken_specification_v2.md).
+
 ## Parameter Structure
 
-The converter structures parameters according to the Wrekenfile v2.0.2 specification. Every parameter is listed in `INPUTS` with a `LOCATION` field saying where it goes in the HTTP request:
+The converter structures parameters according to the Wrekenfile v2.1.0 specification. Every parameter is listed in `INPUTS` with a `LOCATION` field saying where it goes in the HTTP request:
 
 - **Path Parameters** (e.g., `/users/{userId}`): `LOCATION: path`, and also written into `ENDPOINT`
 - **Query Parameters**: `LOCATION: query`
@@ -235,7 +280,7 @@ All errors are logged to the console with timestamps and context information. Th
 
 ## CLI Tools
 
-The CLI tools are available for both v1 and v2. The examples below use v2 (latest), which generates Wrekenfile spec 2.0.2.
+The CLI tools are available for both v1 and v2. The examples below use v2 (latest), which generates Wrekenfile spec 2.1.0.
 
 ### Convert OpenAPI v3 to Wrekenfile
 
@@ -272,13 +317,14 @@ wrekenfile-v2 --input swagger.json --output api_wrekenfile.yaml
 ### Convert Postman Collection to Wrekenfile
 
 ```bash
-wrekenfile-postman --input <postman_collection.json> [--output <wrekenfile.yaml>] [--env <environment.json>]
+wrekenfile-postman --input <postman_collection.json> [--output <wrekenfile.yaml>] [--env <environment.json>] [--signing <recipe.json|yaml>]
 ```
 
 **Options:**
 - `--input` or `-i`: Path to your Postman collection JSON file (required)
 - `--output` or `-o`: Path to output Wrekenfile YAML (optional, defaults to `output_wrekenfile.yaml`)
 - `--env` or `-e`: Path to Postman environment file (optional)
+- `--signing`: Path to an `x-swytchcode-signing` recipe, for collections whose requests are signed by pre-request scripts (optional, see [Signed requests](#signed-requests))
 
 **Example:**
 ```bash
@@ -392,7 +438,7 @@ src/
 │   ├── mini-wrekenfile-generator.ts
 │   ├── wrekenfile-validator.ts
 │   └── cli/                        # CLI tools for v1
-└── v2/                             # Wreken spec v2.0.2
+└── v2/                             # Wreken spec v2.1.0
     ├── index.ts
     ├── openapi-to-wreken.ts
     ├── openapi-v2-to-wrekenfile.ts
