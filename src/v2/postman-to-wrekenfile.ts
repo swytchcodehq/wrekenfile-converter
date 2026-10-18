@@ -639,8 +639,20 @@ function extractErrors(item: any, _itemName: string, _method: string, _path: str
 
 /** A Postman variable reference such as {{signature}} or {{timestamp}}. */
 const VARIABLE_REF = /^\{\{\s*([^}]+?)\s*\}\}$/;
-/** Variables Postman pre-request scripts typically compute for a signature. */
-const SIGNER_VARIABLE = /(signature|sign|nonce|timestamp|recv_?window)$/i;
+/** Words that end a variable a pre-request script computes for a signature. */
+const SIGNER_WORDS = new Set(['signature', 'sign', 'nonce', 'timestamp', 'recvwindow']);
+
+/**
+ * Whether a variable name is one a pre-request script typically computes for a
+ * signature: its last word (split at _, -, . or a camelCase boundary) is one
+ * of SIGNER_WORDS, so apiSign, X-SIGNATURE and recv_window count but design,
+ * campaign and foreign do not.
+ */
+function isSignerName(name: string): boolean {
+  const words = name.split(/[_\-.\s]+|(?<=[a-z0-9])(?=[A-Z])/).filter(Boolean).map((w) => w.toLowerCase());
+  const last = words[words.length - 1] ?? '';
+  return SIGNER_WORDS.has(last) || (last === 'window' && words[words.length - 2] === 'recv');
+}
 
 /**
  * The signing recipe for a Postman collection: passed by the caller (e.g. the
@@ -654,14 +666,22 @@ function postmanSigning(collection: any, recipe: any): SigningInfo | undefined {
     const v = (collection?.variable || []).find((e: any) => e && e.key === SIGNING_EXTENSION);
     r = v?.value;
   }
+  if (r === undefined || r === null) return undefined;
+  // A recipe that was given but cannot be used fails the conversion: converting
+  // without it would produce unsigned methods that the exchange rejects.
+  const source = recipe !== undefined ? 'The signing recipe' : `The collection's ${SIGNING_EXTENSION} recipe`;
   if (typeof r === 'string') {
     try {
       r = JSON.parse(r);
-    } catch {
-      r = undefined;
+    } catch (e: any) {
+      throw createConverterError(`${source} is not valid JSON: ${e.message}`, 'INVALID_SIGNING_RECIPE');
     }
   }
-  return collectSigning({ [SIGNING_EXTENSION]: r }, undefined);
+  const info = collectSigning({ [SIGNING_EXTENSION]: r }, undefined);
+  if (!info) {
+    throw createConverterError(`${source} is not a recipe (an object with a version)`, 'INVALID_SIGNING_RECIPE', { receivedType: Array.isArray(r) ? 'array' : typeof r });
+  }
+  return info;
 }
 
 /**
@@ -670,7 +690,7 @@ function postmanSigning(collection: any, recipe: any): SigningInfo | undefined {
  */
 function isSignerVariable(value: unknown): boolean {
   const m = typeof value === 'string' ? value.trim().match(VARIABLE_REF) : null;
-  return !!m && SIGNER_VARIABLE.test(m[1]);
+  return !!m && isSignerName(m[1]);
 }
 
 /**
@@ -992,7 +1012,7 @@ function generateWrekenfile(collection: any, variables: Record<string, string>, 
         }
         // The recipe itself, and values a signer computes (signature,
         // timestamp...), are never DEFAULTS.
-        if (key === SIGNING_EXTENSION || (signing && (signing.ownedParams.has(key) || SIGNER_VARIABLE.test(key)))) {
+        if (key === SIGNING_EXTENSION || (signing && (signing.ownedParams.has(key) || isSignerName(key)))) {
           continue;
         }
         const isSensitive = SENSITIVE_KEYS.some(sensitiveKey => key.toLowerCase().includes(sensitiveKey));

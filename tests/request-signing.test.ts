@@ -353,6 +353,70 @@ describe('request signing: signer-owned body fields', () => {
   });
 });
 
+describe('request signing: a body STRUCT shared with other users', () => {
+  const recipe = {
+    version: 1,
+    credentials: [{ name: 'api_key' }, { name: 'secret_key', secret: true }],
+    steps: [{ id: 'ts', op: 'time', unit: 'ms' }, { id: 'sig', op: 'hmac', alg: 'sha256', key: 'secret_key', input: '{body}' }],
+    inject: { body_fields: [{ name: 'timestamp', value: '{ts}', type: 'number' }] },
+    set: { headers: { 'X-AUTH-APIKEY': '{api_key}', 'X-AUTH-SIGNATURE': '{sig}' } },
+  };
+  const orderBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Order' } } } };
+  const spec = (paths: any): any => ({
+    openapi: '3.0.3',
+    info: { title: 'Ex', version: '1', 'x-swytchcode-namespace': 'ex' },
+    servers: [{ url: 'https://api.example.com' }],
+    'x-swytchcode-signing': recipe,
+    security: [{ key: [] }],
+    paths,
+    components: {
+      securitySchemes: { key: { type: 'apiKey', in: 'header', name: 'X-AUTH-APIKEY' } },
+      schemas: { Order: { type: 'object', required: ['side', 'timestamp'], properties: { side: { type: 'string' }, timestamp: { type: 'integer' } } } },
+    },
+  });
+  const ok = { '200': { description: 'ok' } };
+  const fieldsOf = (wf: any, type: string) => wf.STRUCTS[type.replace(/^STRUCT\((.+)\)$/, '$1')].map((f: any) => f.name);
+  const byPath = (wf: any, p: string) => Object.values<any>(wf.METHODS).find((m) => m.HTTP.ENDPOINT === p);
+  const bodyInput = (m: any) => (m.INPUTS || []).flatMap((e: any) => Object.values<any>(e)).find((d: any) => d.LOCATION === 'body');
+
+  it('gives the signed method a filtered copy when an unsigned method sends the same STRUCT', () => {
+    const wf: any = yamlLoad(v2OpenApi3(spec({
+      '/orders': { post: { operationId: 'createOrder', requestBody: orderBody, responses: ok } },
+      '/test/orders': { post: { operationId: 'testOrder', security: [], requestBody: orderBody, responses: ok } },
+    }), FIXTURES));
+    const signed = byPath(wf, '/orders');
+    const unsigned = byPath(wf, '/test/orders');
+    expect(fieldsOf(wf, signed.HTTP.BODY.TYPE)).toEqual(['side']);
+    expect(bodyInput(signed).TYPE).toBe(signed.HTTP.BODY.TYPE);
+    expect(unsigned.HTTP.BODY.TYPE).toBe('STRUCT(Order)');
+    expect(fieldsOf(wf, unsigned.HTTP.BODY.TYPE)).toEqual(['side', 'timestamp']);
+    const tmp = path.join(os.tmpdir(), `wreken-shared-${process.pid}.yaml`);
+    fs.writeFileSync(tmp, yamlDump(wf));
+    expect(validateWrekenfile(tmp).errors).toEqual([]);
+  });
+
+  it('keeps the field in a STRUCT a response also returns', () => {
+    const okOrder = { '200': { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Order' } } } } };
+    const wf: any = yamlLoad(v2OpenApi3(spec({
+      '/orders': { post: { operationId: 'createOrder', requestBody: orderBody, responses: okOrder } },
+    }), FIXTURES));
+    const signed = byPath(wf, '/orders');
+    expect(fieldsOf(wf, signed.HTTP.BODY.TYPE)).toEqual(['side']);
+    expect(wf.STRUCTS.Order.map((f: any) => f.name)).toEqual(['side', 'timestamp']);
+  });
+
+  it('filters in place when signed methods are the only users', () => {
+    const wf: any = yamlLoad(v2OpenApi3(spec({
+      '/orders': { post: { operationId: 'createOrder', requestBody: orderBody, responses: ok } },
+      '/orders/test': { post: { operationId: 'testOrder', requestBody: orderBody, responses: ok } },
+    }), FIXTURES));
+    expect(byPath(wf, '/orders').HTTP.BODY.TYPE).toBe('STRUCT(Order)');
+    expect(byPath(wf, '/orders/test').HTTP.BODY.TYPE).toBe('STRUCT(Order)');
+    expect(Object.keys(wf.STRUCTS)).toEqual(['Order']);
+    expect(wf.STRUCTS.Order.map((f: any) => f.name)).toEqual(['side']);
+  });
+});
+
 describe('request signing: Swagger 2', () => {
   it('reads the recipe from securityDefinitions', () => {
     const spec: any = {
@@ -434,6 +498,40 @@ describe('request signing: Postman', () => {
     const wf: any = yamlLoad(v2Postman(collection, extractCollectionVariables(collection)));
     expect(wf.SIGNING).toBeUndefined();
     expect(computeConversionStats(wf).warnings.join('\n')).toMatch(/look signed/);
+  });
+});
+
+describe('request signing: Postman signer variables and bad recipes', () => {
+  const coll = (header: any[], variable: any[] = []): any => ({
+    info: { name: 'Ex', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+    variable: [{ key: 'url', value: 'https://api.example.com' }, ...variable],
+    item: [{ name: 'Orders', request: { method: 'GET', header, url: { raw: '{{url}}/orders', host: ['{{url}}'], path: ['orders'] } } }],
+  });
+  const recipe = { version: 1, credentials: [{ name: 'secret_key', secret: true }], steps: [], set: { headers: { 'X-SIG': '{secret_key}' } } };
+  const orders = (wf: any) => Object.values<any>(wf.METHODS)[0];
+
+  it('does not take a name that merely ends in "sign" for a signature', () => {
+    const c = coll([{ key: 'X-Campaign', value: '{{campaign}}' }, { key: 'X-Design', value: '{{design}}' }], [{ key: 'campaign', value: 'autumn' }]);
+    const wf: any = yamlLoad(v2Postman(c, extractCollectionVariables(c), { signing: recipe }));
+    expect(isSigned(orders(wf))).toBe(false);
+    expect(allInputNames(orders(wf))).toEqual(expect.arrayContaining(['X-Campaign', 'X-Design']));
+    expect(Object.keys(wf.DEFAULTS)).toContain('campaign');
+  });
+
+  it('takes apiSign, X_SIGNATURE and recvWindow for signer variables', () => {
+    for (const v of ['apiSign', 'X_SIGNATURE', 'recvWindow', 'recv-window', 'req.timestamp']) {
+      const c = coll([{ key: 'X-Thing', value: `{{${v}}}` }]);
+      const wf: any = yamlLoad(v2Postman(c, extractCollectionVariables(c), { signing: recipe }));
+      expect(isSigned(orders(wf))).toBe(true);
+    }
+  });
+
+  it('fails on a recipe it cannot use instead of converting unsigned', () => {
+    const c = coll([]);
+    expect(() => v2Postman(c, {}, { signing: { steps: [] } })).toThrow(/signing recipe is not a recipe/);
+    expect(() => v2Postman(c, {}, { signing: '{not json' })).toThrow(/signing recipe is not valid JSON/);
+    const withVar = coll([], [{ key: 'x-swytchcode-signing', value: '{not json' }]);
+    expect(() => v2Postman(withVar, {})).toThrow(/collection's x-swytchcode-signing recipe is not valid JSON/);
   });
 });
 

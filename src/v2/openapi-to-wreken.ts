@@ -448,7 +448,7 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
   return errors;
 }
 
-/** Operation extension that pins a method's canonical ID (e.g. "coinswitch.spot.ticker.list"). */
+/** Operation extension that pins a method's canonical ID (e.g. "binance.spot.ticker.list"). */
 const CANONICAL_ID_EXTENSION = 'x-swytchcode-canonical-id';
 
 function extractMethods(spec: any, resolver: RefResolver, authDefaults: Record<string, string> = {}, signing?: SigningInfo): Record<string, any> {
