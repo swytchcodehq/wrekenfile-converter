@@ -196,10 +196,10 @@ To choose a name yourself (for example when two endpoints would otherwise become
 
 ```yaml
 paths:
-  /trade/api/v2/futures/order:
+  /api/v3/order:
     post:
-      operationId: placeFuturesOrder
-      x-swytchcode-canonical-id: coinswitch.futures.order.create
+      operationId: newOrder
+      x-swytchcode-canonical-id: binance.spot.order.create
 ```
 
 ## Signed requests
@@ -209,32 +209,35 @@ Some APIs, crypto exchanges in particular, need a fresh signature on every reque
 ```yaml
 components:
   securitySchemes:
-    CoinSwitchSignature:
+    BinanceSignature:
       type: apiKey
       in: header
-      name: X-AUTH-SIGNATURE
+      name: X-MBX-APIKEY
       x-swytchcode-signing:
         version: 1
         credentials:
           - {name: api_key, label: API key}
-          - {name: secret_key, label: Secret key, secret: true, encoding: hex}
+          - {name: secret_key, label: Secret key, secret: true}
         steps:
           - {id: ts, op: time, unit: ms}
-          - {id: msg, op: concat, parts: ['{method}', '{path_query_decoded}', '{ts}']}
-          - {id: sig, op: sign, alg: ed25519, key: secret_key, input: '{msg}', output: hex}
+          - {id: msg, op: concat, parts: ['{query}', '{body}']}
+          - {id: sig, op: hmac, alg: sha256, key: secret_key, input: '{msg}', output: hex}
+        inject:
+          query: [{name: recvWindow, value: '5000'}, {name: timestamp, value: '{ts}'}]
         set:
-          headers: {X-AUTH-APIKEY: '{api_key}', X-AUTH-EPOCH: '{ts}', X-AUTH-SIGNATURE: '{sig}'}
+          headers: {X-MBX-APIKEY: '{api_key}'}
+          query: [{name: signature, value: '{sig}'}]
 ```
 
 The converter (OpenAPI v3, Swagger v2 and Postman):
 
 - copies the recipe verbatim into the Wrekenfile's top-level `SIGNING` block;
-- gives each method whose security uses it `SECURITY: [{CoinSwitchSignature: {type: request_signature}}]`. Methods with `security: []` stay unsigned;
-- leaves every header, query parameter and body field the recipe produces out of `HEADERS`, `INPUTS`, request `STRUCTS` and `DEFAULTS`. For example, Binance's required `timestamp` and `signature` parameters are dropped.
+- gives each method whose security uses it `SECURITY: [{BinanceSignature: {type: request_signature}}]`. Methods with `security: []` stay unsigned;
+- leaves every header, query parameter and body field the recipe produces out of `HEADERS`, `INPUTS`, request `STRUCTS` and `DEFAULTS`. Here, Binance's required `timestamp`, `recvWindow` and `signature` parameters are dropped.
 
 Postman collections sign in pre-request scripts, which the converter cannot run, so they need the recipe from outside: pass `{ signing: recipe }` as the third argument of `generateWrekenfileFromPostman`, or `--signing recipe.json` on the CLI. A collection can also carry it as a collection variable named `x-swytchcode-signing`.
 
-Without a recipe, a method that has a signature, nonce or timestamp header or parameter gets a warning in the conversion stats: it will fail with 401 until a recipe is attached. The recipe format and its building blocks are defined in section 15 of the [specification](./specification/wreken_specification_v2.md).
+Without a recipe, a method that has a signature, nonce or timestamp header or parameter gets a warning in the conversion stats: if it is signed, it may fail with 401 until a recipe is attached. The recipe format and its building blocks are defined in section 15 of the [specification](./specification/wreken_specification_v2.md).
 
 ## Parameter Structure
 
