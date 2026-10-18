@@ -23,6 +23,10 @@ function parseArgs() {
     } else if (args[i] === '--signing') {
       // An x-swytchcode-signing recipe for collections signed by pre-request scripts.
       opts.signing = args[++i];
+      if (!opts.signing) {
+        console.error('--signing needs a recipe file');
+        process.exit(1);
+      }
     }
   }
   return opts;

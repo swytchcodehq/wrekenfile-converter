@@ -210,30 +210,113 @@ export function dropSignerOwnedHeaders(headers: Record<string, string>, info: Si
  * Finishes a converted Wrekenfile object: drops signer-owned fields from the
  * request-body STRUCTs of signed methods (CoinDCX and Kraken document their
  * timestamp/nonce as a body field) and adds the SIGNING block.
+ *
+ * A body STRUCT is filtered in place only when the signed methods sending it,
+ * all owning the same fields, are its only users. When anything else uses it
+ * (an unsigned method, a response, another STRUCT's field) or methods signed by
+ * different recipes send it, each set of signed methods gets a filtered copy,
+ * so no other user loses a field.
  */
 export function finishSigning(wrekenfile: any, info: SigningInfo | undefined): void {
   if (!info) return;
   wrekenfile.SIGNING = info.recipes;
   if (!wrekenfile.STRUCTS) return;
-  // Body struct -> the body fields the recipes of the methods sending it produce.
-  const bodyStructs = new Map<string, Set<string>>();
+  // Signed methods sending a STRUCT body, with the body fields their recipes produce.
+  const senders: { method: any; struct: string; owned: string[]; recipes: string[] }[] = [];
   for (const method of Object.values<any>(wrekenfile.METHODS || {})) {
-    const type = String(method?.HTTP?.BODY?.TYPE || '');
-    const m = type.match(/^STRUCT\((.+)\)$/);
-    if (!m) continue;
+    const struct = bodyStructName(method);
+    if (!struct) continue;
+    const owned = new Set<string>();
+    const recipes: string[] = [];
     for (const req of Array.isArray(method?.SECURITY) ? method.SECURITY : []) {
       for (const [recipeName, s] of Object.entries<any>(req || {})) {
         if (s?.type !== REQUEST_SIGNATURE_TYPE) continue;
-        const fields = bodyStructs.get(m[1]) ?? new Set<string>();
-        for (const f of ownedBy(info, recipeName).body) fields.add(f);
-        bodyStructs.set(m[1], fields);
+        recipes.push(recipeName);
+        for (const f of ownedBy(info, recipeName).body) owned.add(f);
+      }
+    }
+    const fields = wrekenfile.STRUCTS[struct];
+    if (!Array.isArray(fields) || !fields.some((f: any) => f && owned.has(f.name))) continue;
+    senders.push({ method, struct, owned: [...owned].sort(), recipes });
+  }
+  if (senders.length === 0) return;
+
+  // Every other reference to a STRUCT: anything but the signed senders' body.
+  const sending = new Set(senders.map((s) => s.method));
+  const otherUses = new Set<string>();
+  const collect = (v: any): void => {
+    if (typeof v === 'string') {
+      for (const m of v.matchAll(/STRUCT\(([^)]+)\)/g)) otherUses.add(m[1]);
+    } else if (Array.isArray(v)) {
+      v.forEach(collect);
+    } else if (v && typeof v === 'object') {
+      Object.values(v).forEach(collect);
+    }
+  };
+  collect(wrekenfile.STRUCTS);
+  for (const method of Object.values<any>(wrekenfile.METHODS || {})) {
+    if (!sending.has(method)) {
+      collect(method);
+      continue;
+    }
+    const { HTTP: http, INPUTS: inputs, ...rest } = method;
+    collect(rest);
+    const { BODY: _body, ...httpRest } = http || {};
+    collect(httpRest);
+    for (const entry of Array.isArray(inputs) ? inputs : []) {
+      for (const def of Object.values<any>(entry || {})) {
+        if (!isBodyInput(def)) collect(def);
       }
     }
   }
-  for (const [name, owned] of bodyStructs) {
-    const fields = wrekenfile.STRUCTS[name];
-    if (Array.isArray(fields) && owned.size > 0) {
-      wrekenfile.STRUCTS[name] = fields.filter((f: any) => !(f && owned.has(f.name)));
+
+  // One variant per STRUCT and set of owned fields.
+  const variants = new Map<string, Map<string, typeof senders>>();
+  for (const s of senders) {
+    const byOwned = variants.get(s.struct) ?? new Map<string, typeof senders>();
+    const key = s.owned.join(',');
+    byOwned.set(key, [...(byOwned.get(key) ?? []), s]);
+    variants.set(s.struct, byOwned);
+  }
+  for (const [struct, byOwned] of variants) {
+    const fields: any[] = wrekenfile.STRUCTS[struct];
+    const inPlace = byOwned.size === 1 && !otherUses.has(struct);
+    for (const group of byOwned.values()) {
+      const owned = new Set(group[0].owned);
+      const filtered = fields.filter((f: any) => !(f && owned.has(f.name)));
+      if (inPlace) {
+        wrekenfile.STRUCTS[struct] = filtered;
+        continue;
+      }
+      const recipes = [...new Set(group.flatMap((s) => s.recipes))].sort();
+      const copy = uniqueStructName(wrekenfile.STRUCTS, `${struct}_${recipes.join('_').replace(/[^A-Za-z0-9_]/g, '_')}`);
+      wrekenfile.STRUCTS[copy] = filtered;
+      for (const s of group) pointBodyAt(s.method, struct, copy);
+    }
+  }
+}
+
+/** The STRUCT a method's HTTP body is, or undefined. */
+function bodyStructName(method: any): string | undefined {
+  return String(method?.HTTP?.BODY?.TYPE || '').match(/^STRUCT\((.+)\)$/)?.[1];
+}
+
+function isBodyInput(def: any): boolean {
+  return String(def?.LOCATION ?? def?.location ?? '').toLowerCase() === 'body';
+}
+
+function uniqueStructName(structs: Record<string, any>, base: string): string {
+  let name = base;
+  for (let i = 2; name in structs; i++) name = `${base}_${i}`;
+  return name;
+}
+
+/** Points a method's body, and its body input, at another STRUCT. */
+function pointBodyAt(method: any, from: string, to: string): void {
+  method.HTTP.BODY.TYPE = `STRUCT(${to})`;
+  for (const entry of Array.isArray(method.INPUTS) ? method.INPUTS : []) {
+    for (const def of Object.values<any>(entry || {})) {
+      if (isBodyInput(def) && def.TYPE === `STRUCT(${from})`) def.TYPE = `STRUCT(${to})`;
     }
   }
 }
