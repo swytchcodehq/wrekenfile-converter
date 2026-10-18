@@ -11,6 +11,8 @@ import {
   FILENAME_TRAILING_SLASHES,
 } from './utils/constants';
 import { generateYamlString } from './utils/yaml-utils';
+import { REQUEST_SIGNATURE_TYPE } from './utils/signing-utils';
+import { WREKENFILE_V2_VERSION } from '../versions';
 import { extractAllStructNames } from './utils/struct-utils';
 
 export interface MiniWrekenfile {
@@ -63,9 +65,9 @@ function createMiniWrekenfile(
   methodData: any,
   canonicalId?: string
 ): MiniWrekenfile {
-  // Unified Mini-Wrekenfile v2.0.2: Execution-complete structure
+  // Unified Mini-Wrekenfile: Execution-complete structure
   const miniData: any = {
-    VERSION: '2.0.2',
+    VERSION: WREKENFILE_V2_VERSION,
     METHOD: {
       ID: methodId,
       SUMMARY: methodData.SUMMARY || '',
@@ -102,6 +104,13 @@ function createMiniWrekenfile(
     }
     if (methodData.HTTP.HEADERS) {
       miniData.HTTP.HEADERS = methodData.HTTP.HEADERS;
+    }
+    // Signed by the runtime (2.1.0): its signer-owned headers and parameters
+    // are absent on purpose and must never be asked for.
+    const signed = Array.isArray(methodData.SECURITY) && methodData.SECURITY.some((req: any) =>
+      Object.values<any>(req || {}).some((scheme) => scheme?.type === REQUEST_SIGNATURE_TYPE));
+    if (signed) {
+      miniData.HTTP.SIGNED = true;
     }
   }
 

@@ -1,4 +1,4 @@
-# Unified Mini-Wrekenfile Specification v2.0
+# Unified Mini-Wrekenfile Specification v2.1
 
 ## Purpose
 The **Unified Mini-Wrekenfile** is a **standalone, execution-complete specification** designed to let humans *and* LLMs generate **correct, deterministic code snippets** for **both HTTP APIs and SDK methods** without resolving any external files.
@@ -20,7 +20,7 @@ This spec is intentionally minimal but **semantically complete** at the executio
 ## Versioning
 
 ```yaml
-VERSION: 2.0.2
+VERSION: 2.1.0
 ```
 
 ---
@@ -83,6 +83,18 @@ HTTP:
 - An auth header's value is the name of a `DEFAULTS` key in the full Wrekenfile
   (here `bearer_token: Bearer <TOKEN>`), never a literal credential. Runtimes
   substitute the real credential or omit the header.
+- `SIGNED: true` marks a method whose requests are signed by the runtime (the full
+  Wrekenfile's `request_signature` SECURITY, version 2.1.0+). Its timestamp, nonce,
+  signature and API-key headers and parameters are absent from `HEADERS` and `INPUTS`
+  on purpose. Never ask for them or add them; the runtime sets them when it sends the
+  request.
+
+```yaml
+HTTP:
+  METHOD: POST
+  ENDPOINT: /trade/api/v2/order
+  SIGNED: true
+```
 
 ---
 

@@ -1,0 +1,1325 @@
+openapi: 3.0.3
+info:
+  title: CoinSwitch PRO HFT & B2B API
+  version: '5.0'
+  x-swytchcode-namespace: coinswitch_hft
+  description: |-
+    Low-latency futures (and allowlisted options) trading, fund transfers, and B2B master /
+    subaccount management for CoinSwitch PRO.
+
+    Source documentation: https://api-trading.coinswitch.co/hft/concepts/overview
+
+    Spot and regular Futures v2 live on `https://coinswitch.co` and are described in a
+    separate spec (`coinswitch`).
+
+    ## Authentication
+
+    Every endpoint, including `GET /v5/market/time`, must be signed with Ed25519 and carry:
+
+    | Header | Value |
+    |---|---|
+    | `X-AUTH-APIKEY` | Your API key (the Ed25519 public key, hex). |
+    | `X-AUTH-SIGNATURE` | Ed25519 signature of the request, hex-encoded. |
+    | `X-AUTH-EPOCH` | Current Unix time in **milliseconds**. **Mandatory** - requests without it get `400`. |
+    | `Content-Type` | `application/json` |
+
+    The signature is computed **per request** over the UTF-8 bytes of:
+
+    ```
+    signed_message = METHOD + path_with_query + epoch
+    ```
+
+    - `METHOD` - uppercase HTTP method.
+    - `path_with_query` - request path plus query string, **URL-decoded**, without scheme or host.
+    - `epoch` - the exact value sent in `X-AUTH-EPOCH`.
+    - The request **body is not signed**.
+
+    Sign with your secret key (a 32-byte Ed25519 seed, hex) and hex-encode the signature.
+
+    Example: `GET /v5/market/tickers?category=linear&symbol=BTCUSDT` at epoch `1756460688504`
+    signs `"GET/v5/market/tickers?category=linear&symbol=BTCUSDT1756460688504"`.
+
+    A static header value cannot satisfy this scheme: `X-AUTH-SIGNATURE` and `X-AUTH-EPOCH`
+    must be generated for every call. See `x-swytchcode-signing` on the `CoinSwitchSignature`
+    security scheme for the machine-readable signing recipe.
+
+    ### Which key to use
+
+    - **HFT** (`/v5/*`, `/dma/api/v1/funds/transfer`): your regular CoinSwitch PRO API key, or a
+      B2B subaccount's key when trading as that subaccount.
+    - **B2B master** (`/dma/api/v1/master/*`): the master account's API key. Subaccount keys get `403`.
+    - **Main book <-> master transfer** (`/dma/api/v1/funds/transfer/master-account`): your
+      CoinSwitch main book API key. Master and subaccount keys get `403`.
+
+    ## Response envelopes
+
+    HFT endpoints return `{ "retCode": 0, "retMsg": "OK", "result": {...}, "retExtInfo": {}, "time": <ms> }`.
+    HTTP 200 only means the request reached the server - always check `retCode == 0`.
+    List endpoints return `result.list` and `result.nextPageCursor`; pass it as `cursor` to page.
+
+    B2B endpoints return `{ "message": "...", "data": {...} }`; errors omit `data` and use an
+    HTTP error status.
+
+    ## Categories
+
+    `category` selects the product line: `linear` (USDT-margined perpetuals, default) or
+    `option` (private beta, allowlisted per key). Send it as a query parameter on GET calls
+    and as a body field on POST calls.
+  contact:
+    name: CoinSwitch API support
+    email: api@coinswitch.co
+    url: https://api-trading.coinswitch.co/
+  termsOfService: https://api-trading.coinswitch.co/resources/terms
+externalDocs:
+  description: CoinSwitch HFT documentation
+  url: https://api-trading.coinswitch.co/hft/concepts/overview
+
+servers:
+  - url: https://dma.coinswitch.co
+    description: Production
+
+security:
+  - CoinSwitchApiKey: []
+    CoinSwitchSignature: []
+    CoinSwitchEpoch: []
+
+tags:
+  - name: HFT Market
+    description: Server time, instruments, order book and tickers.
+  - name: HFT Trading
+    description: Orders, executions, positions, leverage and position mode.
+  - name: HFT Funds
+    description: Move funds between the CoinSwitch wallet and the HFT trading account.
+  - name: B2B Subaccounts
+    description: Create and list subaccounts (master account key).
+  - name: B2B Transfers
+    description: Move USDT between main book, master and subaccounts.
+  - name: B2B Balances
+    description: Master, subaccount and consolidated balances (master account key).
+
+paths:
+  # ------------------------------------------------------------- HFT market
+  /v5/market/time:
+    get:
+      operationId: getHftServerTime
+      x-swytchcode-canonical-id: coinswitch_hft.time.get
+      tags: [HFT Market]
+      summary: Get HFT server time
+      description: HFT server time, for clock-skew monitoring. Requires the standard auth headers.
+      responses:
+        '200':
+          description: Server time.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/HftEnvelope'
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          timeSecond:
+                            type: string
+                            description: Server time (Unix seconds).
+                          timeNano:
+                            type: string
+                            description: Server time (Unix nanoseconds).
+              example:
+                retCode: 0
+                retMsg: OK
+                result:
+                  timeSecond: '1756460688'
+                  timeNano: '1756460688504684927'
+                retExtInfo: {}
+                time: 1756460688504
+        '400':
+          $ref: '#/components/responses/MissingEpoch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v5/market/instruments-info:
+    get:
+      operationId: getHftInstrumentsInfo
+      x-swytchcode-canonical-id: coinswitch_hft.instruments.list
+      tags: [HFT Market]
+      summary: Get instruments info
+      description: Contract specs and trading rules - leverage range, tick size, lot size and minimum notional. Use `tickSize` and `qtyStep` to round price and quantity.
+      parameters:
+        - $ref: '#/components/parameters/CategoryQuery'
+        - name: symbol
+          in: query
+          required: false
+          description: Filter to one symbol, e.g. `BTCUSDT`. Omit to list all.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Instruments.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/HftEnvelope'
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          category:
+                            type: string
+                          nextPageCursor:
+                            type: string
+                          list:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/HftInstrument'
+        '400':
+          $ref: '#/components/responses/MissingEpoch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v5/market/orderbook:
+    get:
+      operationId: getHftOrderBook
+      x-swytchcode-canonical-id: coinswitch_hft.orderbook.get
+      tags: [HFT Market]
+      summary: Get order book
+      description: Live order book snapshot for a symbol.
+      parameters:
+        - $ref: '#/components/parameters/CategoryQuery'
+        - $ref: '#/components/parameters/SymbolQueryRequired'
+        - name: limit
+          in: query
+          required: false
+          description: Number of levels per side.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Order book.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/HftEnvelope'
+                  - type: object
+                    properties:
+                      result:
+                        $ref: '#/components/schemas/HftOrderBook'
+        '400':
+          $ref: '#/components/responses/MissingEpoch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v5/market/tickers:
+    get:
+      operationId: getHftTickers
+      x-swytchcode-canonical-id: coinswitch_hft.tickers.list
+      tags: [HFT Market]
+      summary: Get tickers
+      description: Last price, 24h stats, funding and best bid/ask.
+      parameters:
+        - $ref: '#/components/parameters/CategoryQuery'
+        - name: symbol
+          in: query
+          required: false
+          description: Filter to one symbol. Omit to list all.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tickers.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/HftEnvelope'
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          category:
+                            type: string
+                          list:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/HftTicker'
+        '400':
+          $ref: '#/components/responses/MissingEpoch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ------------------------------------------------------------ HFT trading
+  /v5/order/create:
+    post:
+      operationId: createHftOrder
+      x-swytchcode-canonical-id: coinswitch_hft.order.create
+      tags: [HFT Trading]
+      summary: Place HFT order
+      description: |-
+        Place a limit or market order. `retCode: 0` means the order was accepted, not filled -
+        subscribe to order updates or poll `/v5/order/realtime`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, symbol, side, orderType, qty, positionIdx]
+              properties:
+                category:
+                  $ref: '#/components/schemas/Category'
+                symbol:
+                  type: string
+                  description: e.g. `BTCUSDT`.
+                side:
+                  type: string
+                  enum: [Buy, Sell]
+                orderType:
+                  type: string
+                  enum: [Limit, Market]
+                qty:
+                  type: string
+                  description: Base-asset quantity. Must be a multiple of `qtyStep`.
+                price:
+                  type: string
+                  description: Limit price, required for `Limit`. Must be a multiple of `tickSize`.
+                positionIdx:
+                  type: integer
+                  enum: [0, 1, 2]
+                  description: 0 = one-way mode; 1 = long side (hedge mode); 2 = short side (hedge mode).
+                timeInForce:
+                  type: string
+                  enum: [GTC, IOC, FOK]
+                  default: GTC
+                orderLinkId:
+                  type: string
+                  maxLength: 36
+                  description: Your own order ID. Re-send the same value on retries to de-duplicate.
+            example:
+              category: linear
+              symbol: BTCUSDT
+              side: Buy
+              orderType: Limit
+              qty: '0.001'
+              price: '50000'
+              positionIdx: 1
+              timeInForce: GTC
+              orderLinkId: my-order-1
+      responses:
+        '200':
+          description: Order accepted (check `retCode`).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/HftEnvelope'
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          orderId:
+                            type: string
+                          orderLinkId:
+                            type: string
+        '400':
+          $ref: '#/components/responses/MissingEpoch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v5/order/realtime:
+    get:
+      operationId: getHftOrdersRealtime
+      x-swytchcode-canonical-id: coinswitch_hft.orders.list
+      tags: [HFT Trading]
+      summary: Get orders (realtime)
+      description: Open orders plus orders closed within the last few hours.
+      parameters:
+        - $ref: '#/components/parameters/CategoryQuery'
+        - $ref: '#/components/parameters/SymbolQuery'
+        - $ref: '#/components/parameters/OrderIdQuery'
+        - $ref: '#/components/parameters/OrderLinkIdQuery'
+        - $ref: '#/components/parameters/CursorQuery'
+      responses:
+        '200':
+          description: Orders.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/HftEnvelope'
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          category:
+                            type: string
+                          nextPageCursor:
+                            type: string
+                          list:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/HftOrder'
+        '400':
+          $ref: '#/components/responses/MissingEpoch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v5/execution/list:
+    get:
+      operationId: getHftExecutions
+      x-swytchcode-canonical-id: coinswitch_hft.executions.list
+      tags: [HFT Trading]
+      summary: Get executions
+      description: Trade fills. One order can produce several executions; use `execId` as the primary key.
+      parameters:
+        - $ref: '#/components/parameters/CategoryQuery'
+        - $ref: '#/components/parameters/SymbolQuery'
+        - $ref: '#/components/parameters/OrderIdQuery'
+        - $ref: '#/components/parameters/OrderLinkIdQuery'
+        - $ref: '#/components/parameters/CursorQuery'
+      responses:
+        '200':
+          description: Executions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/HftEnvelope'
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          category:
+                            type: string
+                          nextPageCursor:
+                            type: string
+                          list:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/HftExecution'
+        '400':
+          $ref: '#/components/responses/MissingEpoch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v5/position/list:
+    get:
+      operationId: getHftPositions
+      x-swytchcode-canonical-id: coinswitch_hft.positions.list
+      tags: [HFT Trading]
+      summary: Get positions
+      description: Open positions and their current PnL.
+      parameters:
+        - $ref: '#/components/parameters/CategoryQuery'
+        - $ref: '#/components/parameters/SymbolQuery'
+        - $ref: '#/components/parameters/CursorQuery'
+      responses:
+        '200':
+          description: Positions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/HftEnvelope'
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          category:
+                            type: string
+                          nextPageCursor:
+                            type: string
+                          list:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/HftPosition'
+        '400':
+          $ref: '#/components/responses/MissingEpoch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v5/position/set-leverage:
+    post:
+      operationId: setHftLeverage
+      x-swytchcode-canonical-id: coinswitch_hft.leverage.set
+      tags: [HFT Trading]
+      summary: Set leverage
+      description: Sets leverage for subsequent orders on a symbol. In one-way mode `buyLeverage` and `sellLeverage` must match. `retCode 110043` ("leverage not modified") means no change was needed - treat it as success.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, symbol, buyLeverage, sellLeverage]
+              properties:
+                category:
+                  $ref: '#/components/schemas/Category'
+                symbol:
+                  type: string
+                buyLeverage:
+                  type: string
+                  description: Leverage for long-side orders.
+                sellLeverage:
+                  type: string
+                  description: Leverage for short-side orders.
+            example:
+              category: linear
+              symbol: BTCUSDT
+              buyLeverage: '2'
+              sellLeverage: '2'
+      responses:
+        '200':
+          $ref: '#/components/responses/HftEmptyResult'
+        '400':
+          $ref: '#/components/responses/MissingEpoch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v5/position/switch-mode:
+    post:
+      operationId: switchHftPositionMode
+      x-swytchcode-canonical-id: coinswitch_hft.position_mode.switch
+      tags: [HFT Trading]
+      summary: Switch position mode
+      description: Switch between one-way (0) and hedge (3) mode for every symbol settling in `coin`. Only allowed with no open positions or orders for that coin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, coin, mode]
+              properties:
+                category:
+                  $ref: '#/components/schemas/Category'
+                coin:
+                  type: string
+                  description: Settlement coin, e.g. `USDT`.
+                mode:
+                  type: integer
+                  enum: [0, 3]
+                  description: 0 = one-way; 3 = hedge.
+            example:
+              category: linear
+              coin: USDT
+              mode: 3
+      responses:
+        '200':
+          $ref: '#/components/responses/HftEmptyResult'
+        '400':
+          $ref: '#/components/responses/MissingEpoch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # -------------------------------------------------------------- HFT funds
+  /dma/api/v1/funds/transfer:
+    post:
+      operationId: transferHftFunds
+      x-swytchcode-canonical-id: coinswitch_hft.funds.transfer
+      tags: [HFT Funds]
+      summary: Transfer funds to/from HFT account
+      description: |-
+        Move funds between your CoinSwitch wallet and your HFT trading account. The first
+        successful transfer provisions the HFT account and locks its settlement currency
+        (USDT or INR); later transfers must use the same currency.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [direction, amount]
+              properties:
+                direction:
+                  type: string
+                  enum: [IN, OUT]
+                  description: IN = wallet -> HFT account; OUT = HFT account -> wallet.
+                amount:
+                  type: number
+                  description: Amount in the account's settlement currency.
+                quote_asset:
+                  type: string
+                  enum: [USDT, INR]
+                  default: USDT
+                client_txn_id:
+                  type: string
+                  description: Idempotency key; a retry with the same value is rejected as a duplicate.
+            example:
+              direction: IN
+              amount: 100.0
+              quote_asset: USDT
+              client_txn_id: a4a7424c-c974-4697-b253-a1d19dbb410b
+      responses:
+        '200':
+          description: Transfer result (check `retCode`).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/HftEnvelope'
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          amount:
+                            type: number
+                          direction:
+                            type: string
+                          client_txn_id:
+                            type: string
+                          txn_id:
+                            type: string
+        '400':
+          $ref: '#/components/responses/MissingEpoch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------------------------------------------------------- B2B
+  /dma/api/v1/master/subaccount/create:
+    post:
+      operationId: createB2bSubaccount
+      x-swytchcode-canonical-id: coinswitch_hft.b2b.subaccount.create
+      tags: [B2B Subaccounts]
+      summary: Create subaccount
+      description: Creates a subaccount under the master account and returns its credentials. No request body. Requires the master account API key.
+      responses:
+        '200':
+          description: Subaccount created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      api_key:
+                        type: string
+                      api_secret:
+                        type: string
+                        description: Store securely; shown only here.
+                      subaccount_id:
+                        type: integer
+                        format: int64
+        '401':
+          $ref: '#/components/responses/B2bError'
+        '403':
+          $ref: '#/components/responses/B2bError'
+        '500':
+          $ref: '#/components/responses/B2bError'
+
+  /dma/api/v1/master/subaccounts:
+    get:
+      operationId: listB2bSubaccounts
+      x-swytchcode-canonical-id: coinswitch_hft.b2b.subaccounts.list
+      tags: [B2B Subaccounts]
+      summary: List subaccounts
+      description: All subaccounts (including disabled ones) of the master account. Requires the master account API key.
+      responses:
+        '200':
+          description: Subaccounts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      subaccounts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            subaccount_id:
+                              type: integer
+                              format: int64
+                            is_master:
+                              type: boolean
+                              nullable: true
+                            is_active:
+                              type: boolean
+                              nullable: true
+        '401':
+          $ref: '#/components/responses/B2bError'
+        '403':
+          $ref: '#/components/responses/B2bError'
+
+  /dma/api/v1/funds/transfer/master-account:
+    post:
+      operationId: transferB2bMainbookMaster
+      x-swytchcode-canonical-id: coinswitch_hft.b2b.mainbook_transfer.create
+      tags: [B2B Transfers]
+      summary: Transfer between main book and master
+      description: Move USDT between your CoinSwitch account (main book) and the master account. Requires your CoinSwitch main book API key - master and subaccount keys get 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subaccount_id, amount, direction, client_txn_id, quote_asset]
+              properties:
+                subaccount_id:
+                  type: string
+                  description: subaccount_id of the master account's own subaccount.
+                amount:
+                  type: number
+                  description: Amount to transfer. Must be greater than 0.
+                direction:
+                  type: string
+                  enum: [IN, OUT]
+                  description: IN = main book -> master; OUT = master -> main book.
+                client_txn_id:
+                  type: string
+                  format: uuid
+                  description: Idempotency key, unique per transaction.
+                quote_asset:
+                  type: string
+                  enum: [USDT]
+            example:
+              subaccount_id: '1000'
+              amount: 500.0
+              direction: IN
+              client_txn_id: 0d4f8a3e-2b6c-4b8e-9b1a-6f2e1c7d9a10
+              quote_asset: USDT
+      responses:
+        '200':
+          description: Transfer successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      txn_id:
+                        type: string
+                      subaccount_id:
+                        type: string
+                      direction:
+                        type: string
+                      amount:
+                        type: number
+                      quote_asset:
+                        type: string
+        '400':
+          $ref: '#/components/responses/B2bError'
+        '403':
+          $ref: '#/components/responses/B2bError'
+        '404':
+          $ref: '#/components/responses/B2bError'
+        '500':
+          $ref: '#/components/responses/B2bError'
+
+  /dma/api/v1/master/transfer:
+    post:
+      operationId: transferB2bMasterSubaccount
+      x-swytchcode-canonical-id: coinswitch_hft.b2b.subaccount_transfer.create
+      tags: [B2B Transfers]
+      summary: Transfer between master and subaccount
+      description: Move USDT between the master account and one of its subaccounts. Requires the master account API key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subaccount_id, transfer_type, amount]
+              properties:
+                subaccount_id:
+                  type: string
+                  description: Child subaccount ID, as a numeric string.
+                transfer_type:
+                  type: string
+                  enum: [TRANSFER_IN, TRANSFER_OUT]
+                  description: TRANSFER_IN = master -> subaccount; TRANSFER_OUT = subaccount -> master.
+                amount:
+                  type: number
+                  description: Amount to transfer. Must be greater than 0.
+                coin:
+                  type: string
+                  enum: [USDT]
+                  default: USDT
+            example:
+              subaccount_id: '1001'
+              transfer_type: TRANSFER_IN
+              amount: 100.5
+              coin: USDT
+      responses:
+        '200':
+          description: Transfer successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      txn_id:
+                        type: string
+                      subaccount_id:
+                        type: string
+                      transfer_type:
+                        type: string
+                      amount:
+                        type: number
+                      coin:
+                        type: string
+        '400':
+          $ref: '#/components/responses/B2bError'
+        '403':
+          $ref: '#/components/responses/B2bError'
+        '404':
+          $ref: '#/components/responses/B2bError'
+        '500':
+          $ref: '#/components/responses/B2bError'
+
+  /dma/api/v1/master/balance:
+    get:
+      operationId: getB2bMasterBalance
+      x-swytchcode-canonical-id: coinswitch_hft.b2b.master_balance.get
+      tags: [B2B Balances]
+      summary: Get master balance
+      description: Wallet balance of the master account. Requires the master account API key.
+      responses:
+        '200':
+          description: Master balance.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/B2bBalance'
+        '401':
+          $ref: '#/components/responses/B2bError'
+        '403':
+          $ref: '#/components/responses/B2bError'
+
+  /dma/api/v1/master/subaccount/balance:
+    get:
+      operationId: getB2bSubaccountBalance
+      x-swytchcode-canonical-id: coinswitch_hft.b2b.subaccount_balance.get
+      tags: [B2B Balances]
+      summary: Get subaccount balance
+      description: Wallet balance of a specific child subaccount. Requires the master account API key.
+      parameters:
+        - name: subaccount_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Subaccount balance.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/B2bBalance'
+        '400':
+          $ref: '#/components/responses/B2bError'
+        '403':
+          $ref: '#/components/responses/B2bError'
+        '404':
+          $ref: '#/components/responses/B2bError'
+
+  /dma/api/v1/master/balance/consolidated:
+    get:
+      operationId: getB2bConsolidatedBalance
+      x-swytchcode-canonical-id: coinswitch_hft.b2b.consolidated_balance.get
+      tags: [B2B Balances]
+      summary: Get consolidated balance
+      description: Balances of the master and every subaccount in one call. The first entry is always the master. Partial results are returned if a subaccount fetch fails.
+      responses:
+        '200':
+          description: Consolidated balances.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      balances:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/B2bBalance'
+        '401':
+          $ref: '#/components/responses/B2bError'
+        '403':
+          $ref: '#/components/responses/B2bError'
+
+components:
+  securitySchemes:
+    CoinSwitchApiKey:
+      type: apiKey
+      in: header
+      name: X-AUTH-APIKEY
+      description: CoinSwitch API key (Ed25519 public key, hex). Use the master key for `/dma/api/v1/master/*` and the main book key for `/dma/api/v1/funds/transfer/master-account`.
+    CoinSwitchSignature:
+      type: apiKey
+      in: header
+      name: X-AUTH-SIGNATURE
+      description: |-
+        Hex-encoded Ed25519 signature, generated per request with your secret key over
+        `METHOD + url_decoded(path_with_query) + X-AUTH-EPOCH`. The body is not signed.
+      # Signing recipe (Swytchcode recipe v1): the CLI evaluates it on every request.
+      # Message = METHOD + URL-decoded path?query + epoch (ms); the body is not signed.
+      # B2B master endpoints are signed with the master account's key pair, every other
+      # endpoint with the regular (main book) or subaccount key pair.
+      x-swytchcode-signing:
+        version: 1
+        credentials:
+          - {name: api_key, label: API key}
+          - {name: secret_key, label: Secret key, secret: true, encoding: hex}
+          - {name: master_api_key, label: B2B master API key (leave empty unless you use B2B master endpoints), optional: true}
+          - {name: master_secret_key, label: B2B master secret key, secret: true, encoding: hex, optional: true}
+        rules:
+          - path_prefix: /dma/api/v1/master/
+            steps:
+              - {id: ts, op: time, unit: ms}
+              - {id: msg, op: concat, parts: ['{method}', '{path_query_decoded}', '{ts}']}
+              - {id: sig, op: sign, alg: ed25519, key: master_secret_key, input: '{msg}', output: hex}
+            set:
+              headers:
+                X-AUTH-APIKEY: '{master_api_key}'
+                X-AUTH-EPOCH: '{ts}'
+                X-AUTH-SIGNATURE: '{sig}'
+            sensitive: [X-AUTH-SIGNATURE]
+          - path_prefix: /
+            steps:
+              - {id: ts, op: time, unit: ms}
+              - {id: msg, op: concat, parts: ['{method}', '{path_query_decoded}', '{ts}']}
+              - {id: sig, op: sign, alg: ed25519, key: secret_key, input: '{msg}', output: hex}
+            set:
+              headers:
+                X-AUTH-APIKEY: '{api_key}'
+                X-AUTH-EPOCH: '{ts}'
+                X-AUTH-SIGNATURE: '{sig}'
+            sensitive: [X-AUTH-SIGNATURE]
+    CoinSwitchEpoch:
+      type: apiKey
+      in: header
+      name: X-AUTH-EPOCH
+      description: Current Unix time in milliseconds, generated per request and equal to the epoch in the signed message. Mandatory on HFT (missing -> 400).
+
+  parameters:
+    CategoryQuery:
+      name: category
+      in: query
+      required: true
+      description: '`linear` for USDT perpetuals; `option` for options (allowlisted).'
+      schema:
+        $ref: '#/components/schemas/Category'
+    SymbolQuery:
+      name: symbol
+      in: query
+      required: false
+      description: Filter by symbol, e.g. `BTCUSDT`.
+      schema:
+        type: string
+    SymbolQueryRequired:
+      name: symbol
+      in: query
+      required: true
+      description: Symbol, e.g. `BTCUSDT`.
+      schema:
+        type: string
+    OrderIdQuery:
+      name: orderId
+      in: query
+      required: false
+      description: Server-issued order ID.
+      schema:
+        type: string
+    OrderLinkIdQuery:
+      name: orderLinkId
+      in: query
+      required: false
+      description: Your custom order ID.
+      schema:
+        type: string
+    CursorQuery:
+      name: cursor
+      in: query
+      required: false
+      description: '`nextPageCursor` from the previous page.'
+      schema:
+        type: string
+
+  responses:
+    MissingEpoch:
+      description: '`X-AUTH-EPOCH` header is missing.'
+    Unauthorized:
+      description: Bad API key or signature.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+          example:
+            message: Invalid Access
+    RateLimited:
+      description: Rate limit exceeded. Back off and retry.
+    HftEmptyResult:
+      description: Envelope with an empty `result` (check `retCode`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/HftEnvelope'
+          example:
+            retCode: 0
+            retMsg: OK
+            result: {}
+            retExtInfo: {}
+            time: 1756460695432
+    B2bError:
+      description: B2B error. `data` is omitted.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+  schemas:
+    Category:
+      type: string
+      enum: [linear, option]
+
+    HftEnvelope:
+      type: object
+      properties:
+        retCode:
+          type: integer
+          description: 0 = success; anything else is an error described by `retMsg`.
+        retMsg:
+          type: string
+        result:
+          type: object
+          additionalProperties: true
+        retExtInfo:
+          type: object
+          additionalProperties: true
+        time:
+          type: integer
+          format: int64
+          description: Server time (Unix ms).
+
+    HftInstrument:
+      type: object
+      properties:
+        symbol:
+          type: string
+        contractType:
+          type: string
+        status:
+          type: string
+        baseCoin:
+          type: string
+        quoteCoin:
+          type: string
+        settleCoin:
+          type: string
+        leverageFilter:
+          type: object
+          properties:
+            minLeverage:
+              type: string
+            maxLeverage:
+              type: string
+            leverageStep:
+              type: string
+        priceFilter:
+          type: object
+          properties:
+            minPrice:
+              type: string
+            maxPrice:
+              type: string
+            tickSize:
+              type: string
+        lotSizeFilter:
+          type: object
+          properties:
+            maxOrderQty:
+              type: string
+            minOrderQty:
+              type: string
+            qtyStep:
+              type: string
+            minNotionalValue:
+              type: string
+        fundingInterval:
+          type: integer
+          description: Funding interval in minutes.
+
+    HftOrderBook:
+      type: object
+      properties:
+        s:
+          type: string
+          description: Symbol.
+        b:
+          type: array
+          description: Bids, descending. Each entry `[price, qty]`.
+          items:
+            type: array
+            items:
+              type: string
+        a:
+          type: array
+          description: Asks, ascending. Each entry `[price, qty]`.
+          items:
+            type: array
+            items:
+              type: string
+        ts:
+          type: integer
+          format: int64
+        u:
+          type: integer
+          format: int64
+          description: Update ID.
+        seq:
+          type: integer
+          format: int64
+          description: Sequence number.
+
+    HftTicker:
+      type: object
+      properties:
+        symbol:
+          type: string
+        lastPrice:
+          type: string
+        indexPrice:
+          type: string
+        markPrice:
+          type: string
+        prevPrice24h:
+          type: string
+        price24hPcnt:
+          type: string
+        highPrice24h:
+          type: string
+        lowPrice24h:
+          type: string
+        volume24h:
+          type: string
+        turnover24h:
+          type: string
+        fundingRate:
+          type: string
+        nextFundingTime:
+          type: string
+        ask1Price:
+          type: string
+        ask1Size:
+          type: string
+        bid1Price:
+          type: string
+        bid1Size:
+          type: string
+
+    HftOrder:
+      type: object
+      properties:
+        symbol:
+          type: string
+        orderId:
+          type: string
+        orderLinkId:
+          type: string
+        orderType:
+          type: string
+        orderStatus:
+          type: string
+          enum: [New, PartiallyFilled, Filled, Cancelled, Rejected]
+        side:
+          type: string
+        qty:
+          type: string
+        price:
+          type: string
+        timeInForce:
+          type: string
+        leavesQty:
+          type: string
+        cumExecQty:
+          type: string
+        cumExecValue:
+          type: string
+        cumExecFee:
+          type: string
+        avgPrice:
+          type: string
+        lastPriceOnCreated:
+          type: string
+        positionIdx:
+          type: integer
+        createdTime:
+          type: string
+        updatedTime:
+          type: string
+        rejectReason:
+          type: string
+
+    HftExecution:
+      type: object
+      properties:
+        symbol:
+          type: string
+        orderId:
+          type: string
+        orderLinkId:
+          type: string
+        side:
+          type: string
+        execId:
+          type: string
+        execPrice:
+          type: string
+        execQty:
+          type: string
+        execValue:
+          type: string
+        execFee:
+          type: string
+        feeRate:
+          type: string
+        execTime:
+          type: string
+        isMaker:
+          type: boolean
+        execType:
+          type: string
+        closedSize:
+          type: string
+
+    HftPosition:
+      type: object
+      properties:
+        symbol:
+          type: string
+        side:
+          type: string
+          description: Buy (long) or Sell (short).
+        size:
+          type: string
+        positionValue:
+          type: string
+        avgPrice:
+          type: string
+        markPrice:
+          type: string
+        unrealisedPnl:
+          type: string
+        cumRealisedPnl:
+          type: string
+        leverage:
+          type: string
+        positionIdx:
+          type: integer
+        positionStatus:
+          type: string
+          enum: [Normal, Liq, Adl]
+        tradeMode:
+          type: integer
+        autoAddMargin:
+          type: integer
+        positionIM:
+          type: string
+        positionMM:
+          type: string
+        createdTime:
+          type: string
+        updatedTime:
+          type: string
+
+    B2bBalance:
+      type: object
+      properties:
+        subaccount_id:
+          type: integer
+          format: int64
+          nullable: true
+          description: null for the master account.
+        is_master:
+          type: boolean
+          nullable: true
+        is_active:
+          type: boolean
+          nullable: true
+        account_type:
+          type: string
+        usdt_inr_rate:
+          type: string
+        balance_detail:
+          type: object
+          properties:
+            totalEquity:
+              type: string
+            totalEquityINR:
+              type: string
+            coin:
+              type: array
+              items:
+                type: object
+                properties:
+                  coin:
+                    type: string
+                  equity:
+                    type: string
+                  equityINR:
+                    type: string
+                  walletBalance:
+                    type: string
+                  walletBalanceINR:
+                    type: string
+                  unrealisedPnl:
+                    type: string
+                  unrealisedPnlINR:
+                    type: string

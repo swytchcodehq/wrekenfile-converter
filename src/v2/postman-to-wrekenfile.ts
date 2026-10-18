@@ -1,5 +1,5 @@
 // postman-to-wrekenfile.ts
-// Converts Postman collections to Wrekenfile v2.0.2 format
+// Converts Postman collections to Wrekenfile v2.1.0 format
 import * as fs from 'fs';
 import { generateYamlString } from './utils/yaml-utils';
 import { 
@@ -40,6 +40,17 @@ import {
   postmanAuthPlacement,
 } from './utils/auth-utils';
 import { isMediaType } from './utils/media-type-utils';
+import {
+  type SigningInfo,
+  SIGNING_EXTENSION,
+  ROOT_RECIPE_NAME,
+  addOwnedName,
+  collectSigning,
+  signedSecurity,
+  dropSignerOwnedInputs,
+  dropSignerOwnedHeaders,
+  finishSigning,
+} from './utils/signing-utils';
 
 function mapType(value: any): Primitive {
   if (typeof value === 'string') {
@@ -626,7 +637,85 @@ function extractErrors(item: any, _itemName: string, _method: string, _path: str
   return errors;
 }
 
-function extractOperations(collection: any, variables: Record<string, string>, authDefaults: Record<string, string> = {}): any[] {
+/** A Postman variable reference such as {{signature}} or {{timestamp}}. */
+const VARIABLE_REF = /^\{\{\s*([^}]+?)\s*\}\}$/;
+/** Variables Postman pre-request scripts typically compute for a signature. */
+const SIGNER_VARIABLE = /(signature|sign|nonce|timestamp|recv_?window)$/i;
+
+/**
+ * The signing recipe for a Postman collection: passed by the caller (e.g. the
+ * platform attaching one at upload), else declared on the collection itself -
+ * a top-level x-swytchcode-signing, or a collection variable of that name
+ * holding the recipe (as an object or JSON string).
+ */
+function postmanSigning(collection: any, recipe: any): SigningInfo | undefined {
+  let r = recipe ?? collection?.[SIGNING_EXTENSION];
+  if (r === undefined) {
+    const v = (collection?.variable || []).find((e: any) => e && e.key === SIGNING_EXTENSION);
+    r = v?.value;
+  }
+  if (typeof r === 'string') {
+    try {
+      r = JSON.parse(r);
+    } catch {
+      r = undefined;
+    }
+  }
+  return collectSigning({ [SIGNING_EXTENSION]: r }, undefined);
+}
+
+/**
+ * Whether a Postman header or query value is filled by a pre-request script
+ * computing a signature ({{signature}}, {{timestamp}}...).
+ */
+function isSignerVariable(value: unknown): boolean {
+  const m = typeof value === 'string' ? value.trim().match(VARIABLE_REF) : null;
+  return !!m && SIGNER_VARIABLE.test(m[1]);
+}
+
+/**
+ * Whether a request is signed: it carries a header or query parameter the
+ * recipe produces, or one a pre-request script fills with a signature value.
+ * Public endpoints in exchange collections carry neither.
+ */
+function isSignedRequest(request: any, signing: SigningInfo): boolean {
+  for (const h of request?.header || []) {
+    if (!h || h.disabled || !h.key) continue;
+    if (signing.ownedHeaders.has(String(h.key).toLowerCase()) || isSignerVariable(h.value)) return true;
+  }
+  for (const q of request?.url?.query || []) {
+    if (!q || q.disabled || !q.key) continue;
+    if (signing.ownedParams.has(q.key) || isSignerVariable(q.value)) return true;
+  }
+  return false;
+}
+
+/** Records the request's script-filled header and query names as signer-owned. */
+function addSignerVariableNames(request: any, signing: SigningInfo): void {
+  for (const h of request?.header || []) {
+    if (h?.key && isSignerVariable(h.value)) addOwnedName(signing, ROOT_RECIPE_NAME, 'headers', String(h.key));
+  }
+  for (const q of request?.url?.query || []) {
+    if (q?.key && isSignerVariable(q.value)) addOwnedName(signing, ROOT_RECIPE_NAME, 'query', q.key);
+  }
+}
+
+/**
+ * extractParameters reads every {{variable}} in the raw URL as a path input,
+ * including ones in the query string (?timestamp={{timestamp}}). Drops those
+ * that are signer-owned query names and do not appear in the URL's path.
+ */
+function dropQueryVariableInputs(inputs: any[], request: any, signing: SigningInfo): any[] {
+  const url = request?.url;
+  const pathPart = Array.isArray(url?.path) ? url.path.join('/') : String(url?.path || url?.raw || '').split('?')[0];
+  return inputs.filter((entry) => {
+    const [name, def] = Object.entries<any>(entry || {})[0] || [];
+    if (!name || def?.LOCATION !== 'path' || !signing.ownedParams.has(name)) return true;
+    return pathPart.includes(`{{${name}}}`);
+  });
+}
+
+function extractOperations(collection: any, variables: Record<string, string>, authDefaults: Record<string, string> = {}, signing?: SigningInfo): any[] {
   const operations: any[] = [];
   const operationNameCount: Record<string, number> = {};
 
@@ -652,14 +741,36 @@ function extractOperations(collection: any, variables: Record<string, string>, a
       
       const summary = generateSummary(item, method, path);
       const { contentType, bodyType } = getContentTypeAndBodyType(item.request);
+      const signed = !!signing && isSignedRequest(item.request, signing);
+      if (signed && signing) addSignerVariableNames(item.request, signing);
       const auth = getRequestAuth(item.request, ancestorAuths);
+      // DEFAULTS keys of credentials the signer sets itself at send time.
+      const signerRefs = new Set<string>();
+      if (signed && signing) {
+        for (const [h, ref] of Object.entries(auth.headers)) {
+          if (signing.ownedHeaders.has(h.toLowerCase())) {
+            delete auth.headers[h];
+            signerRefs.add(ref);
+          }
+        }
+        for (const p of auth.params) {
+          if (signing.ownedParams.has(p.name)) signerRefs.add(`${p.location}_${p.name.toLowerCase()}`);
+        }
+        auth.params = auth.params.filter((p) => !signing.ownedParams.has(p.name));
+      }
       for (const [k, v] of Object.entries(auth.defaults)) {
+        if (signerRefs.has(k)) continue;
         if (!(k in authDefaults)) authDefaults[k] = v;
       }
-      const headers = getHeadersForOperation(item.request, auth);
-      const extracted = extractParameters(item.request, variables);
+      let headers = getHeadersForOperation(item.request, auth);
+      let extracted = extractParameters(item.request, variables);
+      let bodyInputs = extractRequestBody(item.request, itemName, method, path);
+      if (signed && signing) {
+        headers = dropSignerOwnedHeaders(headers, signing, ROOT_RECIPE_NAME);
+        extracted = dropSignerOwnedInputs(dropQueryVariableInputs(extracted, item.request, signing), signing, ROOT_RECIPE_NAME);
+        bodyInputs = dropSignerOwnedInputs(bodyInputs, signing, ROOT_RECIPE_NAME);
+      }
       const inputs = [...extracted, ...credentialInputs(auth, extracted)];
-      const bodyInputs = extractRequestBody(item.request, itemName, method, path);
       const returns = extractResponses(item, itemName, method, path);
       const errors = extractErrors(item, itemName, method, path);
       const allInputs = [...inputs];
@@ -732,6 +843,10 @@ function extractOperations(collection: any, variables: Record<string, string>, a
       // ERRORS section (optional)
       if (errors.length > 0) {
         methodDef.ERRORS = errors;
+      }
+
+      if (signed && signing?.rootRecipe) {
+        methodDef.SECURITY = signedSecurity(signing.rootRecipe);
       }
       
       operations.push({
@@ -824,7 +939,16 @@ function extractBaseUrl(collection: any, variables: Record<string, string>): str
   return DEFAULT_BASE_URL;
 }
 
-function generateWrekenfile(collection: any, variables: Record<string, string>): string {
+/** Options for converting a Postman collection. */
+export interface PostmanConvertOptions {
+  /**
+   * A signing recipe (x-swytchcode-signing, version 1) for collections whose
+   * requests are signed by pre-request scripts, which the converter cannot run.
+   */
+  signing?: any;
+}
+
+function generateWrekenfile(collection: any, variables: Record<string, string>, options: PostmanConvertOptions = {}): string {
   try {
     // Validate inputs
     validatePostmanCollection(collection);
@@ -846,7 +970,8 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
     
     const structs = extractStructs(collection, allVariables);
     const authDefaults: Record<string, string> = {};
-    const operations = extractOperations(collection, allVariables, authDefaults);
+    const signing = postmanSigning(collection, options.signing);
+    const operations = extractOperations(collection, allVariables, authDefaults, signing);
     
     const wrekenfile: any = {
       VERSION: WREKENFILE_VERSION,
@@ -863,6 +988,11 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
       for (const [key, value] of Object.entries(allVariables)) {
         // Skip base URL variables as we've already added w_base_url
         if (BASE_URL_VARIABLE_NAMES.includes(key)) {
+          continue;
+        }
+        // The recipe itself, and values a signer computes (signature,
+        // timestamp...), are never DEFAULTS.
+        if (key === SIGNING_EXTENSION || (signing && (signing.ownedParams.has(key) || SIGNER_VARIABLE.test(key)))) {
           continue;
         }
         const isSensitive = SENSITIVE_KEYS.some(sensitiveKey => key.toLowerCase().includes(sensitiveKey));
@@ -947,6 +1077,9 @@ function generateWrekenfile(collection: any, variables: Record<string, string>):
     if (Object.keys(structs).length > 0) {
       wrekenfile.STRUCTS = structs;
     }
+
+    // Signed methods: drop signer-owned body fields, add the SIGNING block.
+    finishSigning(wrekenfile, signing);
 
     // Remove unused STRUCTS (keep only those referenced by METHODS)
     filterStructsByUsage(wrekenfile);

@@ -1,5 +1,5 @@
 // openapi-to-wrekenfile-v2.ts
-// Converts OpenAPI v3 specifications to Wrekenfile v2.0.2 format
+// Converts OpenAPI v3 specifications to Wrekenfile v2.1.0 format
 
 
 
@@ -20,6 +20,16 @@ import {
 } from './utils/constants';
 import { generateReturnVarName, generateErrorWhen, detectPagination } from './utils/response-utils';
 import { type AuthPlacement, operationAuth, credentialInputs, allSchemesDefaults } from './utils/auth-utils';
+import {
+  type SigningInfo,
+  collectSigning,
+  operationRecipe,
+  signedSecurity,
+  withoutSignerOwnedSchemes,
+  dropSignerOwnedInputs,
+  dropSignerOwnedHeaders,
+  finishSigning,
+} from './utils/signing-utils';
 import { findJsonContent, isJsonMediaType, isMediaType } from './utils/media-type-utils';
 import { mergeParameters, resolveServerUrl, getPathLikeObjects } from './utils/openapi-utils';
 import { generateOpenApiSummary } from './utils/summary-utils';
@@ -438,7 +448,10 @@ function extractErrors(op: any, _spec: any, resolver: RefResolver): any[] {
   return errors;
 }
 
-function extractMethods(spec: any, resolver: RefResolver, authDefaults: Record<string, string> = {}): Record<string, any> {
+/** Operation extension that pins a method's canonical ID (e.g. "coinswitch.spot.ticker.list"). */
+const CANONICAL_ID_EXTENSION = 'x-swytchcode-canonical-id';
+
+function extractMethods(spec: any, resolver: RefResolver, authDefaults: Record<string, string> = {}, signing?: SigningInfo): Record<string, any> {
   const methods: Record<string, any> = {};
   
   // Valid HTTP methods
@@ -483,17 +496,28 @@ function extractMethods(spec: any, resolver: RefResolver, authDefaults: Record<s
       const opWithMergedParams = { ...op, parameters: allParams, requestBody: resolvedRequestBody };
       
       const { contentType, bodyType } = getContentTypeAndBodyType(opWithMergedParams);
+      const effectiveSecurity = op.security !== undefined ? op.security : spec.security;
+      // A signed operation's signer adds its own headers at send time, so the
+      // schemes that only carry part of the signature contribute no header.
+      // An unsigned operation keeps them (e.g. an endpoint that needs only the API key).
+      const recipe = operationRecipe(effectiveSecurity, signing);
+      const schemes = spec.components?.securitySchemes;
       const auth = operationAuth(
         allParams,
-        op.security !== undefined ? op.security : spec.security,
-        spec.components?.securitySchemes
+        effectiveSecurity,
+        recipe ? withoutSignerOwnedSchemes(schemes, signing) : schemes
       );
       for (const [k, v] of Object.entries(auth.defaults)) {
         if (!(k in authDefaults)) authDefaults[k] = v;
       }
-      const headers = getHeadersForOperation(opWithMergedParams, auth, method);
-      const pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, resolver, operationId, method, pathStr);
-      const bodyParams = extractRequestBody(opWithMergedParams, operationId, method, pathStr, spec, resolver);
+      let headers = getHeadersForOperation(opWithMergedParams, auth, method);
+      let pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, resolver, operationId, method, pathStr);
+      let bodyParams = extractRequestBody(opWithMergedParams, operationId, method, pathStr, spec, resolver);
+      if (recipe && signing) {
+        headers = dropSignerOwnedHeaders(headers, signing, recipe);
+        pathQueryHeaderParams = dropSignerOwnedInputs(pathQueryHeaderParams, signing, recipe);
+        bodyParams = dropSignerOwnedInputs(bodyParams, signing, recipe);
+      }
       const inputParams = [...pathQueryHeaderParams, ...credentialInputs(auth, pathQueryHeaderParams), ...bodyParams];
       const returns = extractResponses(opWithMergedParams, operationId, method, pathStr, spec, resolver);
       const errors = extractErrors(opWithMergedParams, spec, resolver);
@@ -537,9 +561,15 @@ function extractMethods(spec: any, resolver: RefResolver, authDefaults: Record<s
         methodDef.HTTP.BODYTYPE = bodyType;
       }
 
+      if (typeof op[CANONICAL_ID_EXTENSION] === 'string' && op[CANONICAL_ID_EXTENSION]) {
+        methodDef.CANONICAL_ID = op[CANONICAL_ID_EXTENSION];
+      }
+
       // Add SECURITY metadata
-      const security = op.security !== undefined ? op.security : spec.security;
-      if (security && Array.isArray(security)) {
+      const security = effectiveSecurity;
+      if (recipe) {
+        methodDef.SECURITY = signedSecurity(recipe);
+      } else if (security && Array.isArray(security)) {
         if (security.length === 0) {
           methodDef.SECURITY = [];
         } else {
@@ -608,10 +638,11 @@ function extractMethods(spec: any, resolver: RefResolver, authDefaults: Record<s
   return methods;
 }
 
-function extractSecurityDefaults(spec: any, operationDefaults: Record<string, string>): Record<string, string> {
+function extractSecurityDefaults(spec: any, operationDefaults: Record<string, string>, signing?: SigningInfo): Record<string, string> {
   // Every key an auth header references must exist in DEFAULTS (see
-  // auth-utils); declared-but-unused schemes are listed too.
-  const defs: Record<string, string> = allSchemesDefaults(spec.components?.securitySchemes);
+  // auth-utils); declared-but-unused schemes are listed too, except those that
+  // only carry part of a request signature (see signing-utils).
+  const defs: Record<string, string> = allSchemesDefaults(withoutSignerOwnedSchemes(spec.components?.securitySchemes, signing));
   for (const [k, v] of Object.entries(operationDefaults)) {
     if (!(k in defs)) defs[k] = v;
   }
@@ -663,8 +694,9 @@ function generateWrekenfile(spec: any, baseDir: string): string {
     validateBaseDir(baseDir);
 
     const authDefaults: Record<string, string> = {};
-    const methods = extractMethods(spec, resolver, authDefaults);
-    const defaults = extractSecurityDefaults(spec, authDefaults);
+    const signing = collectSigning(spec, spec.components?.securitySchemes);
+    const methods = extractMethods(spec, resolver, authDefaults, signing);
+    const defaults = extractSecurityDefaults(spec, authDefaults, signing);
     const structs = extractStructs(spec, resolver);
 
     // Resolve canonical IDs for all methods
@@ -710,6 +742,9 @@ function generateWrekenfile(spec: any, baseDir: string): string {
   if (preFilterStructCount > 0) {
     wrekenfile.STRUCTS = structs;
   }
+
+  // Signed methods: drop signer-owned body fields, add the SIGNING block.
+  finishSigning(wrekenfile, signing);
 
   // Remove unused STRUCTS (keep only those referenced by METHODS)
   filterStructsByUsage(wrekenfile);

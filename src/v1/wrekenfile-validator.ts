@@ -209,6 +209,9 @@ function validateWrekenfile(filePath: string): ValidationResult {
     // Cross-reference validation
     validateCrossReferences(data, result);
 
+    // SIGNING recipes and request_signature SECURITY (Wrekenfile 2.1.0)
+    validateSigning(data, result);
+
   } catch (error: any) {
     result.isValid = false;
     if (error.name === 'YAMLException') {
@@ -734,6 +737,131 @@ function validateCrossReferences(data: WrekenfileStructure, result: ValidationRe
   }
 }
 
+// Building blocks a version 1 signing recipe may use (see section 15 of the
+// Wreken specification). Kept in step with the runtime that evaluates them.
+const SIGNING_OPS = new Set([
+  'time', 'expires', 'nonce', 'literal', 'concat', 'hash', 'hmac', 'sign', 'jwt',
+  'encode', 'canonical_params', 'trim_prefix',
+]);
+const SIGNING_RECIPE_VERSION = 1;
+
+function signingSchemes(recipe: any): any[] {
+  return Array.isArray(recipe?.rules) && recipe.rules.length > 0 ? recipe.rules : [recipe];
+}
+
+/** Validates one SIGNING recipe; returns the header and parameter names it produces. */
+/** The names a recipe produces, by where it puts them (headers lowercase). */
+type OwnedSigningNames = { headers: Set<string>; query: Set<string>; body: Set<string> };
+
+function validateRecipe(recipe: any, name: string, result: ValidationResult): OwnedSigningNames {
+  const owned: OwnedSigningNames = { headers: new Set(), query: new Set(), body: new Set() };
+  const fail = (msg: string) => {
+    result.isValid = false;
+    result.errors.push(`SIGNING.${name}: ${msg}`);
+  };
+  if (!recipe || typeof recipe !== 'object' || Array.isArray(recipe)) {
+    fail('must be an object');
+    return owned;
+  }
+  if (!Number.isInteger(recipe.version) || recipe.version < 1) {
+    fail('version must be a positive integer');
+  } else if (recipe.version > SIGNING_RECIPE_VERSION) {
+    result.warnings.push(`SIGNING.${name}: recipe version ${recipe.version} is newer than this validator knows (${SIGNING_RECIPE_VERSION})`);
+  }
+  if (!Array.isArray(recipe.credentials) || recipe.credentials.length === 0) {
+    fail('credentials must be a non-empty list');
+  } else {
+    for (const c of recipe.credentials) {
+      if (!c || typeof c.name !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(c.name)) fail(`invalid credential ${JSON.stringify(c)}`);
+    }
+  }
+  if (Array.isArray(recipe.rules) && recipe.rules.length > 0) {
+    recipe.rules.forEach((rule: any, i: number) => {
+      if (!rule?.host && !rule?.path_prefix) fail(`rules[${i}] needs a host or path_prefix`);
+    });
+  }
+  for (const scheme of signingSchemes(recipe)) {
+    const ids = new Set<string>();
+    for (const step of Array.isArray(scheme?.steps) ? scheme.steps : []) {
+      if (!step || typeof step.id !== 'string' || !step.id) fail('every step needs an id');
+      else if (ids.has(step.id)) fail(`duplicate step id '${step.id}'`);
+      else ids.add(step.id);
+      if (!SIGNING_OPS.has(step?.op)) fail(`step '${step?.id}' has unknown op '${step?.op}'`);
+    }
+    const set = scheme?.set;
+    const placesSomething = set && (Object.keys(set.headers || {}).length > 0 || (set.query || []).length > 0 || (set.body_fields || []).length > 0 || set.body);
+    if (!placesSomething) fail('set places nothing on the request');
+    for (const placement of [scheme?.inject, scheme?.set]) {
+      for (const h of Object.keys(placement?.headers || {})) owned.headers.add(h.toLowerCase());
+      for (const f of placement?.query || []) {
+        if (typeof f?.name === 'string') owned.query.add(f.name);
+      }
+      for (const f of placement?.body_fields || []) {
+        if (typeof f?.name === 'string') owned.body.add(f.name);
+      }
+    }
+  }
+  return owned;
+}
+
+function validateSigning(data: any, result: ValidationResult): void {
+  const signing = data.SIGNING;
+  const owned: Record<string, OwnedSigningNames> = {};
+  if (signing !== undefined) {
+    if (typeof signing !== 'object' || signing === null || Array.isArray(signing)) {
+      result.isValid = false;
+      result.errors.push('SIGNING must be an object of named recipes');
+      return;
+    }
+    for (const [name, recipe] of Object.entries<any>(signing)) {
+      owned[name] = validateRecipe(recipe, name, result);
+    }
+  }
+
+  const methods = data.METHODS || data.INTERFACES || {};
+  for (const [methodName, method] of Object.entries<any>(methods)) {
+    const security = Array.isArray(method?.SECURITY) ? method.SECURITY : [];
+    for (const req of security) {
+      for (const [schemeName, scheme] of Object.entries<any>(req || {})) {
+        if (scheme?.type !== 'request_signature') continue;
+        const recipe = owned[schemeName];
+        if (!recipe) {
+          result.isValid = false;
+          result.errors.push(`Method '${methodName}': SECURITY names signing recipe '${schemeName}', which is not in SIGNING`);
+          continue;
+        }
+        // Signer-owned values must not be listed (spec section 15.2, rule 3).
+        for (const h of Object.keys(method?.HTTP?.HEADERS || {})) {
+          if (recipe.headers.has(h.toLowerCase())) {
+            result.isValid = false;
+            result.errors.push(`Method '${methodName}': header '${h}' is set by signing recipe '${schemeName}' and must not be listed in HEADERS`);
+          }
+        }
+        for (const entry of Array.isArray(method?.INPUTS) ? method.INPUTS : []) {
+          for (const [inputName, def] of Object.entries<any>(entry || {})) {
+            const loc = String((def && typeof def === 'object' ? def.LOCATION ?? def.location : '') || '').toLowerCase();
+            const asHeader = recipe.headers.has(inputName.toLowerCase());
+            const asQuery = recipe.query.has(inputName);
+            const asBody = recipe.body.has(inputName);
+            // A name only counts where the recipe puts it (a path `timestamp` is
+            // the caller's); without a location (the simple `NAME: STRING` form)
+            // any place counts.
+            const isOwned =
+              loc === 'header' ? asHeader :
+              loc === 'query' ? asQuery :
+              loc === 'body' ? asBody :
+              loc ? false : asHeader || asQuery || asBody;
+            if (isOwned) {
+              result.isValid = false;
+              result.errors.push(`Method '${methodName}': input '${inputName}' is set by signing recipe '${schemeName}' and must not be an INPUT`);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 function printValidationResult(result: ValidationResult): void {
   console.log('Wrekenfile Validation Results:');
   console.log('=====================================');
@@ -838,6 +966,7 @@ if (require.main === module) {
 }
 
 export {
+  validateSigning,
   validateWrekenfile,
   fixWrekenfile,
   ValidationResult,

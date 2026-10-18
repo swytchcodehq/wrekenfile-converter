@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { load } from 'js-yaml';
 import { generateWrekenfile } from '../openapi-v2-to-wrekenfile';
+import { WREKENFILE_V2_VERSION } from '../../versions';
 
 function printUsage() {
   console.log(`Usage: npx ts-node src/v2/cli/cli-openapi-v2-to-wrekenfile.ts --input <swagger.yaml|json> [--output <wrekenfile.yaml>] [--cwd <dir>]`);
@@ -66,7 +67,7 @@ async function main() {
 
   try {
     fs.writeFileSync(outputPath, wrekenfileYaml, 'utf8');
-    console.log(`Wrekenfile v2.0.2 written to ${outputPath}`);
+    console.log(`Wrekenfile v${WREKENFILE_V2_VERSION} written to ${outputPath}`);
   } catch (err) {
     console.error('Failed to write output file:', err);
     process.exit(1);
