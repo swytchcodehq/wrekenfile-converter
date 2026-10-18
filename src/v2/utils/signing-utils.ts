@@ -22,6 +22,14 @@ export const ROOT_RECIPE_NAME = 'request_signature';
 /** The SECURITY type of a signed method. */
 export const REQUEST_SIGNATURE_TYPE = 'request_signature';
 
+/** The names one recipe produces, by where it puts them. */
+export interface OwnedNames {
+  /** Lowercase header names. */
+  headers: Set<string>;
+  query: Set<string>;
+  body: Set<string>;
+}
+
 /** What the converter needs to know about a spec's signing recipes. */
 export interface SigningInfo {
   /** SIGNING block: recipe name -> recipe, copied verbatim. */
@@ -30,9 +38,11 @@ export interface SigningInfo {
   schemeRecipes: Record<string, string>;
   /** The root-level recipe's name, when the spec declares one. */
   rootRecipe?: string;
-  /** Lowercase names of headers the recipes produce. */
+  /** Recipe name -> the names it produces. A method only loses the names of its own recipe. */
+  owned: Record<string, OwnedNames>;
+  /** Lowercase names of headers any recipe produces. */
   ownedHeaders: Set<string>;
-  /** Names of query parameters and body fields the recipes produce. */
+  /** Names of query parameters and body fields any recipe produces. */
   ownedParams: Set<string>;
 }
 
@@ -45,16 +55,42 @@ function recipeSchemes(recipe: any): any[] {
   return Array.isArray(recipe?.rules) && recipe.rules.length > 0 ? recipe.rules : [recipe];
 }
 
-function addOwnedNames(recipe: any, info: SigningInfo): void {
+/** Records name as produced by recipeName, in the given place. */
+export function addOwnedName(info: SigningInfo, recipeName: string, where: keyof OwnedNames, name: string): void {
+  const owned = ownedEntry(info, recipeName);
+  if (where === 'headers') {
+    owned.headers.add(name.toLowerCase());
+    info.ownedHeaders.add(name.toLowerCase());
+  } else {
+    owned[where].add(name);
+    info.ownedParams.add(name);
+  }
+}
+
+function ownedEntry(info: SigningInfo, recipeName: string): OwnedNames {
+  return (info.owned[recipeName] ??= { headers: new Set(), query: new Set(), body: new Set() });
+}
+
+function addOwnedNames(recipe: any, recipeName: string, info: SigningInfo): void {
+  ownedEntry(info, recipeName);
   for (const scheme of recipeSchemes(recipe)) {
     for (const placement of [scheme?.inject, scheme?.set]) {
       if (!placement || typeof placement !== 'object') continue;
-      for (const h of Object.keys(placement.headers || {})) info.ownedHeaders.add(h.toLowerCase());
-      for (const f of [...(placement.query || []), ...(placement.body_fields || [])]) {
-        if (f && typeof f.name === 'string') info.ownedParams.add(f.name);
+      for (const h of Object.keys(placement.headers || {})) addOwnedName(info, recipeName, 'headers', h);
+      for (const f of placement.query || []) {
+        if (f && typeof f.name === 'string') addOwnedName(info, recipeName, 'query', f.name);
+      }
+      for (const f of placement.body_fields || []) {
+        if (f && typeof f.name === 'string') addOwnedName(info, recipeName, 'body', f.name);
       }
     }
   }
+}
+
+const NO_NAMES: OwnedNames = { headers: new Set(), query: new Set(), body: new Set() };
+
+function ownedBy(info: SigningInfo, recipeName: string): OwnedNames {
+  return info.owned[recipeName] || NO_NAMES;
 }
 
 /**
@@ -63,20 +99,20 @@ function addOwnedNames(recipe: any, info: SigningInfo): void {
  * securityDefinitions). Returns undefined when the spec declares none.
  */
 export function collectSigning(spec: any, schemes: Record<string, any> | undefined): SigningInfo | undefined {
-  const info: SigningInfo = { recipes: {}, schemeRecipes: {}, ownedHeaders: new Set(), ownedParams: new Set() };
+  const info: SigningInfo = { recipes: {}, schemeRecipes: {}, owned: {}, ownedHeaders: new Set(), ownedParams: new Set() };
   for (const [name, scheme] of Object.entries<any>(schemes || {})) {
     const recipe = scheme?.[SIGNING_EXTENSION];
     if (isRecipe(recipe)) {
       info.recipes[name] = recipe;
       info.schemeRecipes[name] = name;
-      addOwnedNames(recipe, info);
+      addOwnedNames(recipe, name, info);
     }
   }
   const root = spec?.[SIGNING_EXTENSION] ?? spec?.info?.[SIGNING_EXTENSION];
   if (isRecipe(root)) {
     info.recipes[ROOT_RECIPE_NAME] = root;
     info.rootRecipe = ROOT_RECIPE_NAME;
-    addOwnedNames(root, info);
+    addOwnedNames(root, ROOT_RECIPE_NAME, info);
   }
   return Object.keys(info.recipes).length > 0 ? info : undefined;
 }
@@ -128,17 +164,23 @@ export function withoutSignerOwnedSchemes(schemes: Record<string, any> | undefin
   return out;
 }
 
-/** Whether a Wrekenfile INPUT (one `{name: spec}` entry) is signer-owned. */
-function isOwnedInput(name: string, def: any, info: SigningInfo): boolean {
+/**
+ * Whether a Wrekenfile INPUT (one `{name: spec}` entry) is produced by the
+ * recipe. A name only counts in the place the recipe puts it, so a path
+ * `timestamp` stays when the recipe injects a query `timestamp`.
+ */
+function isOwnedInput(name: string, def: any, owned: OwnedNames): boolean {
   const loc = String((def && typeof def === 'object' ? def.LOCATION ?? def.location : '') || '').toLowerCase();
-  const asHeader = info.ownedHeaders.has(name.toLowerCase());
-  const asParam = info.ownedParams.has(name);
-  if (loc === 'header') return asHeader;
-  return loc ? asParam : asHeader || asParam;
+  if (loc === 'header') return owned.headers.has(name.toLowerCase());
+  if (loc === 'query') return owned.query.has(name);
+  if (loc === 'body') return owned.body.has(name);
+  if (loc) return false;
+  return owned.headers.has(name.toLowerCase()) || owned.query.has(name) || owned.body.has(name);
 }
 
-/** INPUTS without the parameters a recipe produces. */
-export function dropSignerOwnedInputs(inputs: any[], info: SigningInfo): any[] {
+/** INPUTS without the parameters recipeName produces. */
+export function dropSignerOwnedInputs(inputs: any[], info: SigningInfo, recipeName: string): any[] {
+  const owned = ownedBy(info, recipeName);
   const out: any[] = [];
   for (const entry of inputs) {
     if (!entry || typeof entry !== 'object') {
@@ -147,18 +189,19 @@ export function dropSignerOwnedInputs(inputs: any[], info: SigningInfo): any[] {
     }
     const kept: Record<string, any> = {};
     for (const [name, def] of Object.entries<any>(entry)) {
-      if (!isOwnedInput(name, def, info)) kept[name] = def;
+      if (!isOwnedInput(name, def, owned)) kept[name] = def;
     }
     if (Object.keys(kept).length > 0) out.push(kept);
   }
   return out;
 }
 
-/** HEADERS without the headers a recipe produces. */
-export function dropSignerOwnedHeaders(headers: Record<string, string>, info: SigningInfo): Record<string, string> {
+/** HEADERS without the headers recipeName produces. */
+export function dropSignerOwnedHeaders(headers: Record<string, string>, info: SigningInfo, recipeName: string): Record<string, string> {
+  const owned = ownedBy(info, recipeName).headers;
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(headers)) {
-    if (!info.ownedHeaders.has(k.toLowerCase())) out[k] = v;
+    if (!owned.has(k.toLowerCase())) out[k] = v;
   }
   return out;
 }
@@ -171,20 +214,26 @@ export function dropSignerOwnedHeaders(headers: Record<string, string>, info: Si
 export function finishSigning(wrekenfile: any, info: SigningInfo | undefined): void {
   if (!info) return;
   wrekenfile.SIGNING = info.recipes;
-  if (info.ownedParams.size === 0 || !wrekenfile.STRUCTS) return;
-  const bodyStructs = new Set<string>();
+  if (!wrekenfile.STRUCTS) return;
+  // Body struct -> the body fields the recipes of the methods sending it produce.
+  const bodyStructs = new Map<string, Set<string>>();
   for (const method of Object.values<any>(wrekenfile.METHODS || {})) {
-    const signed = Array.isArray(method?.SECURITY) && method.SECURITY.some((req: any) =>
-      Object.values<any>(req || {}).some((s) => s?.type === REQUEST_SIGNATURE_TYPE));
-    if (!signed) continue;
     const type = String(method?.HTTP?.BODY?.TYPE || '');
     const m = type.match(/^STRUCT\((.+)\)$/);
-    if (m) bodyStructs.add(m[1]);
+    if (!m) continue;
+    for (const req of Array.isArray(method?.SECURITY) ? method.SECURITY : []) {
+      for (const [recipeName, s] of Object.entries<any>(req || {})) {
+        if (s?.type !== REQUEST_SIGNATURE_TYPE) continue;
+        const fields = bodyStructs.get(m[1]) ?? new Set<string>();
+        for (const f of ownedBy(info, recipeName).body) fields.add(f);
+        bodyStructs.set(m[1], fields);
+      }
+    }
   }
-  for (const name of bodyStructs) {
+  for (const [name, owned] of bodyStructs) {
     const fields = wrekenfile.STRUCTS[name];
-    if (Array.isArray(fields)) {
-      wrekenfile.STRUCTS[name] = fields.filter((f: any) => !(f && info.ownedParams.has(f.name)));
+    if (Array.isArray(fields) && owned.size > 0) {
+      wrekenfile.STRUCTS[name] = fields.filter((f: any) => !(f && owned.has(f.name)));
     }
   }
 }

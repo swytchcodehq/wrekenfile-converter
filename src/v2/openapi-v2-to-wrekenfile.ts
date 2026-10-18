@@ -431,9 +431,9 @@ function extractMethods(spec: any, resolver: RefResolver, authDefaults: Record<s
       let pathQueryHeaderParams = extractParameters(opWithMergedParams, spec, resolver);
       let bodyParams = extractRequestBody(opWithMergedParams, operationId, method, pathStr, spec, resolver);
       if (recipe && signing) {
-        headers = dropSignerOwnedHeaders(headers, signing);
-        pathQueryHeaderParams = dropSignerOwnedInputs(pathQueryHeaderParams, signing);
-        bodyParams = dropSignerOwnedInputs(bodyParams, signing);
+        headers = dropSignerOwnedHeaders(headers, signing, recipe);
+        pathQueryHeaderParams = dropSignerOwnedInputs(pathQueryHeaderParams, signing, recipe);
+        bodyParams = dropSignerOwnedInputs(bodyParams, signing, recipe);
       }
       const inputParams = [...pathQueryHeaderParams, ...credentialInputs(auth, pathQueryHeaderParams), ...bodyParams];
       const returns = extractResponses(opWithMergedParams, operationId, method, pathStr, spec, resolver);

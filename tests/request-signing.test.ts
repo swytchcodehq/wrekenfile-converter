@@ -206,6 +206,90 @@ describe('request signing: unsigned operations keep their API-key scheme', () =>
   });
 });
 
+describe('request signing: a method loses only its own recipe\'s names', () => {
+  // Two recipes: Spot injects a query `timestamp`; Futures injects a body `nonce`.
+  const spotRecipe = { ...binanceRecipe };
+  const futuresRecipe = {
+    version: 1,
+    credentials: [{ name: 'api_key' }, { name: 'secret_key', secret: true }],
+    steps: [
+      { id: 'n', op: 'nonce', kind: 'monotonic_ms' },
+      { id: 'sig', op: 'hmac', alg: 'sha256', key: 'secret_key', input: '{body}', output: 'hex' },
+    ],
+    inject: { body_fields: [{ name: 'nonce', value: '{n}' }] },
+    set: { headers: { 'X-FUT-SIGN': '{sig}' } },
+  };
+  function spec(): any {
+    const body = (props: Record<string, any>) => ({ required: true, content: { 'application/json': { schema: { type: 'object', properties: props } } } });
+    return {
+      openapi: '3.0.3',
+      info: { title: 'Ex', version: '1', 'x-swytchcode-namespace': 'ex' },
+      servers: [{ url: 'https://api.ex.com' }],
+      paths: {
+        '/spot/order': {
+          post: {
+            operationId: 'spotOrder',
+            security: [{ Spot: [] }],
+            parameters: [{ name: 'timestamp', in: 'query', schema: { type: 'integer' } }],
+            requestBody: body({ symbol: { type: 'string' }, nonce: { type: 'string' } }),
+            responses: { '200': { description: 'ok' } },
+          },
+        },
+        '/futures/order': {
+          post: {
+            operationId: 'futuresOrder',
+            security: [{ Futures: [] }],
+            parameters: [{ name: 'timestamp', in: 'query', schema: { type: 'integer' } }],
+            requestBody: body({ symbol: { type: 'string' }, nonce: { type: 'string' } }),
+            responses: { '200': { description: 'ok' } },
+          },
+        },
+        '/spot/candles/{timestamp}': {
+          get: {
+            operationId: 'candlesAt',
+            security: [{ Spot: [] }],
+            parameters: [{ name: 'timestamp', in: 'path', required: true, schema: { type: 'integer' } }],
+            responses: { '200': { description: 'ok' } },
+          },
+        },
+      },
+      components: {
+        securitySchemes: {
+          Spot: { type: 'apiKey', in: 'header', name: 'X-MBX-APIKEY', 'x-swytchcode-signing': spotRecipe },
+          Futures: { type: 'apiKey', in: 'header', name: 'X-FUT-SIGN', 'x-swytchcode-signing': futuresRecipe },
+        },
+      },
+    };
+  }
+  const wf: any = yamlLoad(v2OpenApi3(spec(), FIXTURES));
+  const byPath = (p: string) => Object.values<any>(wf.METHODS).find((m) => m.HTTP.ENDPOINT === p);
+  const bodyFields = (m: any) => (wf.STRUCTS[m.HTTP.BODY.TYPE.match(/^STRUCT\((.+)\)$/)[1]] || []).map((f: any) => f.name);
+
+  it('keeps names the other recipe produces', () => {
+    const spot = byPath('/spot/order');
+    expect(allInputNames(spot)).not.toContain('timestamp');
+    expect(bodyFields(spot)).toContain('nonce');
+    const futures = byPath('/futures/order');
+    expect(allInputNames(futures)).toContain('timestamp');
+    expect(bodyFields(futures)).not.toContain('nonce');
+  });
+
+  it('keeps a path input that shares a name with an injected query parameter', () => {
+    const candles = byPath('/spot/candles/{timestamp}');
+    expect(isSigned(candles)).toBe(true);
+    expect(allInputNames(candles)).toContain('timestamp');
+  });
+
+  it('validates: a path timestamp is the caller\'s, a query timestamp is not', () => {
+    const tmp = path.join(os.tmpdir(), `wreken-scope-${process.pid}.yaml`);
+    fs.writeFileSync(tmp, yamlDump(wf));
+    expect(validateWrekenfile(tmp).errors).toEqual([]);
+    byPath('/futures/order').SECURITY = [{ Spot: { type: 'request_signature' } }];
+    fs.writeFileSync(tmp, yamlDump(wf));
+    expect(validateWrekenfile(tmp).errors.join('\n')).toMatch(/input 'timestamp' is set by signing recipe 'Spot'/);
+  });
+});
+
 describe('request signing: look-signed warning', () => {
   it('does not fire for an ordinary timestamp query filter', () => {
     const wf = {

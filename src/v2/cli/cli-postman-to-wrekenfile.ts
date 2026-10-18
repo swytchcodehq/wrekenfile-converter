@@ -64,6 +64,10 @@ async function main() {
       console.error(`Could not read signing recipe ${recipeFile}: ${(error as any).message}`);
       process.exit(1);
     }
+    if (!signing || typeof signing !== 'object' || Array.isArray(signing) || signing.version === undefined) {
+      console.error(`Signing recipe ${recipeFile} is empty or is not a recipe (an object with a version)`);
+      process.exit(1);
+    }
   }
 
   try {

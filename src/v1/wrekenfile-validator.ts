@@ -750,8 +750,11 @@ function signingSchemes(recipe: any): any[] {
 }
 
 /** Validates one SIGNING recipe; returns the header and parameter names it produces. */
-function validateRecipe(recipe: any, name: string, result: ValidationResult): { headers: Set<string>; params: Set<string> } {
-  const owned = { headers: new Set<string>(), params: new Set<string>() };
+/** The names a recipe produces, by where it puts them (headers lowercase). */
+type OwnedSigningNames = { headers: Set<string>; query: Set<string>; body: Set<string> };
+
+function validateRecipe(recipe: any, name: string, result: ValidationResult): OwnedSigningNames {
+  const owned: OwnedSigningNames = { headers: new Set(), query: new Set(), body: new Set() };
   const fail = (msg: string) => {
     result.isValid = false;
     result.errors.push(`SIGNING.${name}: ${msg}`);
@@ -790,8 +793,11 @@ function validateRecipe(recipe: any, name: string, result: ValidationResult): { 
     if (!placesSomething) fail('set places nothing on the request');
     for (const placement of [scheme?.inject, scheme?.set]) {
       for (const h of Object.keys(placement?.headers || {})) owned.headers.add(h.toLowerCase());
-      for (const f of [...(placement?.query || []), ...(placement?.body_fields || [])]) {
-        if (typeof f?.name === 'string') owned.params.add(f.name);
+      for (const f of placement?.query || []) {
+        if (typeof f?.name === 'string') owned.query.add(f.name);
+      }
+      for (const f of placement?.body_fields || []) {
+        if (typeof f?.name === 'string') owned.body.add(f.name);
       }
     }
   }
@@ -800,7 +806,7 @@ function validateRecipe(recipe: any, name: string, result: ValidationResult): { 
 
 function validateSigning(data: any, result: ValidationResult): void {
   const signing = data.SIGNING;
-  const owned: Record<string, { headers: Set<string>; params: Set<string> }> = {};
+  const owned: Record<string, OwnedSigningNames> = {};
   if (signing !== undefined) {
     if (typeof signing !== 'object' || signing === null || Array.isArray(signing)) {
       result.isValid = false;
@@ -835,9 +841,16 @@ function validateSigning(data: any, result: ValidationResult): void {
           for (const [inputName, def] of Object.entries<any>(entry || {})) {
             const loc = String((def && typeof def === 'object' ? def.LOCATION ?? def.location : '') || '').toLowerCase();
             const asHeader = recipe.headers.has(inputName.toLowerCase());
-            const asParam = recipe.params.has(inputName);
-            // Without a location (e.g. the simple `NAME: STRING` form) either kind counts.
-            const isOwned = loc === 'header' ? asHeader : loc ? asParam : asHeader || asParam;
+            const asQuery = recipe.query.has(inputName);
+            const asBody = recipe.body.has(inputName);
+            // A name only counts where the recipe puts it (a path `timestamp` is
+            // the caller's); without a location (the simple `NAME: STRING` form)
+            // any place counts.
+            const isOwned =
+              loc === 'header' ? asHeader :
+              loc === 'query' ? asQuery :
+              loc === 'body' ? asBody :
+              loc ? false : asHeader || asQuery || asBody;
             if (isOwned) {
               result.isValid = false;
               result.errors.push(`Method '${methodName}': input '${inputName}' is set by signing recipe '${schemeName}' and must not be an INPUT`);

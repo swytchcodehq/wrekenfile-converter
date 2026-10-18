@@ -43,6 +43,8 @@ import { isMediaType } from './utils/media-type-utils';
 import {
   type SigningInfo,
   SIGNING_EXTENSION,
+  ROOT_RECIPE_NAME,
+  addOwnedName,
   collectSigning,
   signedSecurity,
   dropSignerOwnedInputs,
@@ -691,11 +693,26 @@ function isSignedRequest(request: any, signing: SigningInfo): boolean {
 /** Records the request's script-filled header and query names as signer-owned. */
 function addSignerVariableNames(request: any, signing: SigningInfo): void {
   for (const h of request?.header || []) {
-    if (h?.key && isSignerVariable(h.value)) signing.ownedHeaders.add(String(h.key).toLowerCase());
+    if (h?.key && isSignerVariable(h.value)) addOwnedName(signing, ROOT_RECIPE_NAME, 'headers', String(h.key));
   }
   for (const q of request?.url?.query || []) {
-    if (q?.key && isSignerVariable(q.value)) signing.ownedParams.add(q.key);
+    if (q?.key && isSignerVariable(q.value)) addOwnedName(signing, ROOT_RECIPE_NAME, 'query', q.key);
   }
+}
+
+/**
+ * extractParameters reads every {{variable}} in the raw URL as a path input,
+ * including ones in the query string (?timestamp={{timestamp}}). Drops those
+ * that are signer-owned query names and do not appear in the URL's path.
+ */
+function dropQueryVariableInputs(inputs: any[], request: any, signing: SigningInfo): any[] {
+  const url = request?.url;
+  const pathPart = Array.isArray(url?.path) ? url.path.join('/') : String(url?.path || url?.raw || '').split('?')[0];
+  return inputs.filter((entry) => {
+    const [name, def] = Object.entries<any>(entry || {})[0] || [];
+    if (!name || def?.LOCATION !== 'path' || !signing.ownedParams.has(name)) return true;
+    return pathPart.includes(`{{${name}}}`);
+  });
 }
 
 function extractOperations(collection: any, variables: Record<string, string>, authDefaults: Record<string, string> = {}, signing?: SigningInfo): any[] {
@@ -749,9 +766,9 @@ function extractOperations(collection: any, variables: Record<string, string>, a
       let extracted = extractParameters(item.request, variables);
       let bodyInputs = extractRequestBody(item.request, itemName, method, path);
       if (signed && signing) {
-        headers = dropSignerOwnedHeaders(headers, signing);
-        extracted = dropSignerOwnedInputs(extracted, signing);
-        bodyInputs = dropSignerOwnedInputs(bodyInputs, signing);
+        headers = dropSignerOwnedHeaders(headers, signing, ROOT_RECIPE_NAME);
+        extracted = dropSignerOwnedInputs(dropQueryVariableInputs(extracted, item.request, signing), signing, ROOT_RECIPE_NAME);
+        bodyInputs = dropSignerOwnedInputs(bodyInputs, signing, ROOT_RECIPE_NAME);
       }
       const inputs = [...extracted, ...credentialInputs(auth, extracted)];
       const returns = extractResponses(item, itemName, method, path);
