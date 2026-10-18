@@ -156,6 +156,76 @@ describe('request signing: signer-owned parameters (Binance-style)', () => {
   });
 });
 
+describe('request signing: unsigned operations keep their API-key scheme', () => {
+  // Binance's user-data-stream endpoints take only the API key header; the same
+  // header is one the signer sets on signed endpoints.
+  const recipe = { ...binanceRecipe, set: { headers: { 'X-MBX-APIKEY': '{api_key}' }, query: [{ name: 'signature', value: '{sig}' }] } };
+  function spec(): any {
+    return {
+      openapi: '3.0.3',
+      info: { title: 'Binance', version: '1', 'x-swytchcode-namespace': 'binance' },
+      servers: [{ url: 'https://api.binance.com' }],
+      paths: {
+        '/api/v3/account': { get: { operationId: 'account', security: [{ Signed: [] }], responses: { '200': { description: 'ok' } } } },
+        '/api/v3/userDataStream': { post: { operationId: 'stream', security: [{ KeyOnly: [] }], responses: { '200': { description: 'ok' } } } },
+      },
+      components: {
+        securitySchemes: {
+          Signed: { type: 'apiKey', in: 'query', name: 'signature', 'x-swytchcode-signing': recipe },
+          KeyOnly: { type: 'apiKey', in: 'header', name: 'X-MBX-APIKEY' },
+        },
+      },
+    };
+  }
+
+  function check(wf: any) {
+    const byPath = (p: string) => Object.values<any>(wf.METHODS).find((m) => m.HTTP.ENDPOINT === p);
+    expect(isSigned(byPath('/api/v3/account'))).toBe(true);
+    expect(Object.keys(byPath('/api/v3/account').HTTP.HEADERS || {})).not.toContain('X-MBX-APIKEY');
+    const stream = byPath('/api/v3/userDataStream');
+    expect(isSigned(stream)).toBe(false);
+    expect(Object.keys(stream.HTTP.HEADERS || {})).toContain('X-MBX-APIKEY');
+    expect(Object.keys(wf.DEFAULTS).length).toBeGreaterThan(1);
+  }
+
+  it('OpenAPI 3', () => {
+    check(yamlLoad(v2OpenApi3(spec(), FIXTURES)));
+  });
+
+  it('Swagger 2', () => {
+    const s = spec();
+    const swagger: any = {
+      swagger: '2.0',
+      info: s.info,
+      host: 'api.binance.com',
+      schemes: ['https'],
+      paths: s.paths,
+      securityDefinitions: s.components.securitySchemes,
+    };
+    check(yamlLoad(v2Swagger2(swagger, FIXTURES)));
+  });
+});
+
+describe('request signing: look-signed warning', () => {
+  it('does not fire for an ordinary timestamp query filter', () => {
+    const wf = {
+      METHODS: {
+        'x.trades.list': { HTTP: { METHOD: 'GET', ENDPOINT: '/trades', HEADERS: {} }, INPUTS: [{ timestamp: { TYPE: 'INT', LOCATION: 'query' } }] },
+      },
+    };
+    expect(computeConversionStats(wf).warnings.join('\n')).not.toMatch(/look signed/);
+  });
+
+  it('fires for a timestamp header', () => {
+    const wf = {
+      METHODS: {
+        'x.orders.list': { HTTP: { METHOD: 'GET', ENDPOINT: '/orders', HEADERS: {} }, INPUTS: [{ 'X-BX-TIMESTAMP': { TYPE: 'STRING', LOCATION: 'header' } }] },
+      },
+    };
+    expect(computeConversionStats(wf).warnings.join('\n')).toMatch(/look signed/);
+  });
+});
+
 describe('request signing: signer-owned body fields', () => {
   it('drops an injected body field from the request STRUCT', () => {
     const spec: any = {
@@ -326,6 +396,16 @@ describe('request signing: validator', () => {
     const errors = validate(wf).errors.join('\n');
     expect(errors).toMatch(/header 'X-AUTH-SIGNATURE' is set by signing recipe/);
     expect(errors).toMatch(/input 'X-AUTH-EPOCH' is set by signing recipe/);
+  });
+
+  it('rejects a signer-owned input with a lowercase or missing location', () => {
+    const wf = convertFixture('coinswitch-v2.yaml');
+    const m = wf.METHODS['coinswitch.spot.order.create'];
+    m.INPUTS.push({ 'X-AUTH-EPOCH': { TYPE: 'STRING', location: 'header' } });
+    m.INPUTS.push({ 'X-AUTH-APIKEY': 'STRING' });
+    const errors = validate(wf).errors.join('\n');
+    expect(errors).toMatch(/input 'X-AUTH-EPOCH' is set by signing recipe/);
+    expect(errors).toMatch(/input 'X-AUTH-APIKEY' is set by signing recipe/);
   });
 
   it('rejects an unknown op and a recipe that places nothing', () => {

@@ -130,9 +130,11 @@ export function withoutSignerOwnedSchemes(schemes: Record<string, any> | undefin
 
 /** Whether a Wrekenfile INPUT (one `{name: spec}` entry) is signer-owned. */
 function isOwnedInput(name: string, def: any, info: SigningInfo): boolean {
-  const loc = String(def?.LOCATION || '').toLowerCase();
-  if (loc === 'header') return info.ownedHeaders.has(name.toLowerCase());
-  return info.ownedParams.has(name);
+  const loc = String((def && typeof def === 'object' ? def.LOCATION ?? def.location : '') || '').toLowerCase();
+  const asHeader = info.ownedHeaders.has(name.toLowerCase());
+  const asParam = info.ownedParams.has(name);
+  if (loc === 'header') return asHeader;
+  return loc ? asParam : asHeader || asParam;
 }
 
 /** INPUTS without the parameters a recipe produces. */

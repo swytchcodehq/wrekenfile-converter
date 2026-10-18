@@ -120,7 +120,7 @@ export function computeConversionStats(
   if (looksSigned.length > 0) {
     warnings.push(
       `${looksSigned.length} method(s) look signed (signature/nonce/timestamp header or parameter, e.g. ${looksSigned[0]}) ` +
-        'but no signing recipe is declared - add an x-swytchcode-signing recipe or they will fail with 401'
+        'but no signing recipe is declared - if they are signed, add an x-swytchcode-signing recipe or they may fail with 401'
     );
   }
 
@@ -143,8 +143,10 @@ export function computeConversionStats(
   };
 }
 
-/** Header or query names that carry a per-request signature. */
+/** Header names that carry a per-request signature. */
 const SIGNATURE_LIKE = /^(x-[a-z0-9]+-)*(signature|sign|nonce|timestamp|recv-?window|api-?sign)$/i;
+/** Query names that carry a signature. A bare `timestamp` or `nonce` query is often an ordinary filter. */
+const SIGNATURE_LIKE_QUERY = /^(signature|api-?sign)$/i;
 
 /** Header and query inputs/headers of a method whose names look like a signature. */
 function signatureLikeNames(methodData: any): string[] {
@@ -155,7 +157,7 @@ function signatureLikeNames(methodData: any): string[] {
   for (const entry of Array.isArray(methodData?.INPUTS) ? methodData.INPUTS : []) {
     for (const [name, def] of Object.entries<any>(entry || {})) {
       const loc = String(def?.LOCATION || '').toLowerCase();
-      if ((loc === 'header' || loc === 'query') && SIGNATURE_LIKE.test(name)) names.push(name);
+      if ((loc === 'header' && SIGNATURE_LIKE.test(name)) || (loc === 'query' && SIGNATURE_LIKE_QUERY.test(name))) names.push(name);
     }
   }
   return names;

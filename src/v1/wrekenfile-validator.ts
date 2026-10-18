@@ -833,8 +833,11 @@ function validateSigning(data: any, result: ValidationResult): void {
         }
         for (const entry of Array.isArray(method?.INPUTS) ? method.INPUTS : []) {
           for (const [inputName, def] of Object.entries<any>(entry || {})) {
-            const loc = String(def?.LOCATION || '').toLowerCase();
-            const isOwned = loc === 'header' ? recipe.headers.has(inputName.toLowerCase()) : recipe.params.has(inputName);
+            const loc = String((def && typeof def === 'object' ? def.LOCATION ?? def.location : '') || '').toLowerCase();
+            const asHeader = recipe.headers.has(inputName.toLowerCase());
+            const asParam = recipe.params.has(inputName);
+            // Without a location (e.g. the simple `NAME: STRING` form) either kind counts.
+            const isOwned = loc === 'header' ? asHeader : loc ? asParam : asHeader || asParam;
             if (isOwned) {
               result.isValid = false;
               result.errors.push(`Method '${methodName}': input '${inputName}' is set by signing recipe '${schemeName}' and must not be an INPUT`);

@@ -58,7 +58,12 @@ async function main() {
       console.error(`Signing recipe not found: ${recipeFile}`);
       process.exit(1);
     }
-    signing = load(fs.readFileSync(recipeFile, 'utf8'));
+    try {
+      signing = load(fs.readFileSync(recipeFile, 'utf8'));
+    } catch (error) {
+      console.error(`Could not read signing recipe ${recipeFile}: ${(error as any).message}`);
+      process.exit(1);
+    }
   }
 
   try {

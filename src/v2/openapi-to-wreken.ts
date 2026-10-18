@@ -499,11 +499,13 @@ function extractMethods(spec: any, resolver: RefResolver, authDefaults: Record<s
       const effectiveSecurity = op.security !== undefined ? op.security : spec.security;
       // A signed operation's signer adds its own headers at send time, so the
       // schemes that only carry part of the signature contribute no header.
+      // An unsigned operation keeps them (e.g. an endpoint that needs only the API key).
       const recipe = operationRecipe(effectiveSecurity, signing);
+      const schemes = spec.components?.securitySchemes;
       const auth = operationAuth(
         allParams,
         effectiveSecurity,
-        withoutSignerOwnedSchemes(spec.components?.securitySchemes, signing)
+        recipe ? withoutSignerOwnedSchemes(schemes, signing) : schemes
       );
       for (const [k, v] of Object.entries(auth.defaults)) {
         if (!(k in authDefaults)) authDefaults[k] = v;
